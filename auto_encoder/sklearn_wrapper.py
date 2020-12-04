@@ -30,8 +30,13 @@ class AETransformer(BaseEstimator, TransformerMixin):
         if not self.ae:
             hidden_dims = calculate_hidden_dims(self.first_dim, self.n_layers, self.latent_dim, self.net_shape)
 
-            self.ae = Autoencoder(self.input_shape, hidden_dims, self.activation, self.dropout, self.regularizer,
-                                  self.tied_weights, self.final_activation)
+            self.ae = Autoencoder(input_shape=self.input_shape,
+                                  hidden_dims=hidden_dims,
+                                  activation=self.activation,
+                                  dropout=self.dropout,
+                                  regularizer=self.regularizer,
+                                  tied_weights=self.tied_weights,
+                                  final_activation=self.final_activation)
             if not self.ae.is_fit:
                 self.ae.compile(loss=self.loss, optimizer=self.optimizer)
                 self.ae.fit(X, X, epochs=epochs, validation_split=0.1, callbacks=[self.callback])
