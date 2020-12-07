@@ -5,33 +5,26 @@ from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
 
-from auto_encoder.ae import Autoencoder
-from auto_encoder.sklearn_wrapper import AETransformer
+from auto_encoder.model import Autoencoder
+from auto_encoder.sklearn import SklearnTransformer, AutoTransformer
 from dataloader.openml import get_openml_data
 from dataloader.utils import get_train_test_indices
 
 
-if __name__ == '__main__':
-
-    x, y = get_openml_data(44)
-    split_indices = get_train_test_indices(x)
-
+def test_datasets():
     dataset_ids = [40996, 40668, 1492, 44]
     results = []
 
     for dataset_id in dataset_ids:
         Autoencoder.cache_clear()
         x, y = get_openml_data(dataset_id)
-        split_indices = get_train_test_indices(y, test_size=0.2)
-
-
+        split_indices = get_train_test_indices(y)
 
         pipe = Pipeline([
-            ('ae', AETransformer(input_shape=x[0].shape)),
+            ('ae', AETransformer()),
             ('clf', PipelineHelper([('svm', SVC(max_iter=500)),
                                     ('log_reg', LogisticRegression(max_iter=500)),
-                                    ('xgb', XGBClassifier())
-                                    ]))
+                                    ('xgb', XGBClassifier())]))
         ])
 
         params = {
@@ -47,3 +40,9 @@ if __name__ == '__main__':
         grid.fit(x, y)
 
 
+if __name__ == '__main__':
+    x, y = get_openml_data(44)
+    Autoencoder.cache_clear()
+    aet = AutoTransformer(first_dim=0.9, latent_dim=0.4, dropout=0, tied_weights=False)
+    aet.fit(x)
+    print(aet.model.summary())
