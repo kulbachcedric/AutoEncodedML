@@ -43,7 +43,7 @@ def test_dataset(dataset_id):
 
     params = {
         'at__hidden_dims': layer_sizes,
-        'at__dropout': [(0, 0), (0.2, 0.5)],
+        'at__dropout': [(0, 0), (0.2, 0.2), (0.2,0.5)],
         'at__activation': ['selu'],
         'at__n_layers': [2, 4],
         'clf__selected_model': pipe.named_steps['clf'].generate({
