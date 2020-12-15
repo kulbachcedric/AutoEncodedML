@@ -28,13 +28,8 @@ class Autoencoder(tf.keras.Model):
         layers_encoder = []
         layers_decoder = []
         input_shape = input_shape[1:]
-        self.hidden_dims_abs = [dim * np.prod(input_shape) if isinstance(dim, float) else dim for dim in
-                                self.hidden_dims]
-
-        if len(self.hidden_dims_abs) == 2:
-            self.hidden_dims_abs = self.calculate_hidden_dims()
-        elif len(self.hidden_dims_abs) == 1:
-            self.hidden_dims_abs = np.repeat(self.hidden_dims_abs[0], self.n_layers)
+        self.hidden_dims_abs = self.calculate_hidden_dims(hidden_dims=self.hidden_dims, n_layers=self.n_layers,
+                                                          input_shape=input_shape)
 
         if not isinstance(self.dropout, tuple) or len(self.dropout) < 2:
             input_dropout = self.dropout
@@ -53,12 +48,10 @@ class Autoencoder(tf.keras.Model):
             layers.Dense(self.hidden_dims_abs[-1], self.activation, activity_regularizer=self.regularizer))
 
         if self.tied_weights:
-            for index, layer in enumerate(layers_encoder[::-1]):
-                if isinstance(layer, layers.Dense):
-                    if index >= len(layers_encoder) - 1:
-                        layers_decoder.append(DenseTranspose(layer, activation=self.final_activation))
-                    else:
-                        layers_decoder.append(DenseTranspose(layer, activation=self.activation))
+            dense_layers = [layer for layer in layers_encoder[::-1] if isinstance(layer, layers.Dense)]
+            for layer in dense_layers[:-1]:
+                layers_decoder.append(DenseTranspose(layer, activation=self.activation))
+            layers_decoder.append(DenseTranspose(dense_layers[-1], activation=self.final_activation))
         else:
             for dim in self.hidden_dims_abs[1::-1]:
                 layers_decoder.append(layers.Dense(dim, activation=self.activation))
@@ -76,11 +69,21 @@ class Autoencoder(tf.keras.Model):
         decoded = self.decoder(encoded)
         return decoded
 
-    def calculate_hidden_dims(self):
-        if self.net_shape == 'linear':
-            dims = np.linspace(*self.hidden_dims_abs, self.n_layers)
+    def calculate_hidden_dims(self, hidden_dims, n_layers, input_shape):
+
+        dim_calculator = np.linspace if self.net_shape == 'linear' else np.geomspace
+
+        if isinstance(hidden_dims, float):
+            dims = hidden_dims * np.prod(input_shape)
+        elif isinstance(hidden_dims, (tuple, list)):
+            dims = [dim * np.prod(input_shape) if isinstance(dim, float) else dim for dim in hidden_dims]
         else:
-            dims = np.geomspace(*self.hidden_dims_abs, self.n_layers)
+            dims = hidden_dims
+
+        if isinstance(dims, (tuple, list)) and len(dims) == 2:
+            dims = dim_calculator(*dims, num=n_layers)
+        elif isinstance(dims, (int, float)):
+            dims = dim_calculator(np.prod(input_shape), dims, num=n_layers + 1)[1:]
 
         dims = np.round(dims).astype(int)
         return tuple(dims)
