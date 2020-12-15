@@ -79,7 +79,7 @@ if __name__ == '__main__':
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
-        Autoencoder.clear_cache()
+        Autoencoder.cache_clear()
         results[dataset_id] = test_dataset(dataset_id)
     df = pd.DataFrame(results)
     df.index.names = ('dataset_id', 'idx')
