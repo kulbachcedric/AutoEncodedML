@@ -8,7 +8,7 @@ from sklearn.svm import SVC
 from xgboost import XGBClassifier
 
 from auto_encoder.model import Autoencoder
-from auto_encoder.sklearn import AutoTransformer, ConvAutoTransformer
+from auto_encoder.sklearn import AutoTransformer
 from dataloader.openml import get_openml_data
 from dataloader.util import get_train_test_indices
 import pandas as pd
