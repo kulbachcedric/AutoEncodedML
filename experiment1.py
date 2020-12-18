@@ -81,7 +81,7 @@ if __name__ == '__main__':
         print(f'---------Dataset: {dataset_id}---------')
         Autoencoder.cache_clear()
         results[dataset_id] = test_dataset(dataset_id)
-    df = pd.DataFrame(results)
+    df = pd.concat(results)
     df.index.names = ('dataset_id', 'idx')
     df.reset_index(level='idx', drop=True, inplace=True)
     df.to_csv('gridsearch_results.csv')
