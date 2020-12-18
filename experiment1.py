@@ -9,8 +9,8 @@ from xgboost import XGBClassifier
 
 from auto_encoder.model import Autoencoder
 from auto_encoder.sklearn import AutoTransformer
-from dataloader.openml import get_openml_data
-from dataloader.util import get_train_test_indices
+from data.openml import get_openml_data
+from data.util import get_train_test_indices
 import pandas as pd
 from experiments.util import cv_results_to_df
 import numpy as np
