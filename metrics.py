@@ -1,14 +1,15 @@
+import numpy as np
 from art.attacks.evasion import ZooAttack, HopSkipJump
 from art.estimators.classification import SklearnClassifier
 from sklearn.linear_model import LogisticRegression
-from data.openml import get_openml_data
+from sklearn.metrics import get_scorer
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, get_scorer
-from data.util import corrupt_gaussian, corrupt_zero_mask
-import numpy as np
 from sklearn.pipeline import Pipeline
-from auto_encoder.sklearn import AutoTransformer
 from sklearn.utils import resample
+
+from auto_encoder.sklearn import AutoTransformer
+from data.openml import get_openml_data
+from data.util import corrupt_gaussian, corrupt_zero_mask
 
 
 class AdversarialRobustness:
@@ -21,6 +22,7 @@ class AdversarialRobustness:
         if self.sample_size:
             X, y_true = resample(X, y_true, n_samples=self.sample_size, replace=False)
         adv_model = SklearnClassifier(estimator)
+        # TODO: Set attack parameters automatically
         attack = self.attack(adv_model, **self.attack_params)
         X_adv = attack.generate(x=X, y=y_true)
         preds_adv = estimator.predict(X_adv)

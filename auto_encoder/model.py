@@ -5,10 +5,10 @@ from tensorflow.keras import layers
 from auto_encoder.component import DenseTranspose
 
 
-@functools.lru_cache(maxsize=5)
+# @functools.lru_cache(maxsize=5)
 class Autoencoder(tf.keras.Model):
 
-    def __init__(self, hidden_dims=(0.6, 0.2), n_layers=3, net_shape='geom', activation='selu', dropout=(0.2, 0.5),
+    def __init__(self, hidden_dims=(0.6, 0.2), n_layers=3, net_shape='geom', activation='selu', dropout=None,
                  regularizer=None, tied_weights=True, final_activation=None):
 
         super().__init__()

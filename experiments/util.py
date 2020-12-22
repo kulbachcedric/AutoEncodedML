@@ -2,12 +2,18 @@ import pandas as pd
 import re
 
 
-def cv_results_to_df(my_dict, column_clf='clf'):
+def cv_results_to_df(my_dict, cols_expand=['clf']):
     df = pd.DataFrame(my_dict).drop('params', axis=1)
-    df_clf = df.pop('param_' + column_clf + '__selected_model').apply(pd.Series)
-    clf_params = pd.DataFrame(df_clf.loc[:, 1].tolist())
-    df_clf.drop(df_clf.columns[1], inplace=True, axis=1)
-    df_clf.columns = [column_clf]
-    result = pd.concat([df, df_clf, clf_params], axis=1)
+    expanded = []
+    for col_expand in cols_expand:
+        col_expanded = df.pop('param_' + col_expand + '__selected_model').apply(pd.Series)
+        params_col_expanded = pd.DataFrame(col_expanded.loc[:, 1].tolist())
+        col_expanded.drop(col_expanded.columns[1], inplace=True, axis=1)
+        col_expanded.rename(columns={0: col_expand}, inplace=True)
+        expanded.extend([params_col_expanded, col_expanded])
+
+    sub_dfs = [df]
+    sub_dfs.extend(expanded)
+    result = pd.concat(sub_dfs, axis=1)
     result.columns = [re.sub("param.*__", "", col) for col in result.columns]
     return result
