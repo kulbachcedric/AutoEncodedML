@@ -4,7 +4,7 @@ from auto_encoder.model import Autoencoder, ConvAutoencoder
 
 
 class AutoTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, hidden_dims=(0.6, 0.2), n_layers=3, net_shape='geom', activation='selu', dropout=(0.2, 0.5),
+    def __init__(self, hidden_dims=0.2, n_layers=3, net_shape='geom', activation='selu', dropout=None,
                  regularizer=None, tied_weights=True, final_activation=None, loss='mse', optimizer='adam',
                  max_epochs=100):
         self.hidden_dims = hidden_dims
@@ -92,3 +92,14 @@ class ConvAutoTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X, y=None):
         return self.model.encoder(X).numpy()
+
+
+class IdentityTransformer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def fit_transform(self, X, y=None, **fit_params):
+        return X
+
+    def transform(self, X, y=None):
+        return X
