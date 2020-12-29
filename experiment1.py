@@ -36,7 +36,7 @@ if __name__ == '__main__':
     ])
 
     params = {
-        'at__hidden_dims': np.arange(0.05, 1.05, 0.05),
+        'at__hidden_dims': np.arange(0.05, 2.05, 0.05),
         'at__activation': ['selu'],
         'at__n_layers': [3],
         'clf__selected_model': pipe.named_steps['clf'].generate({
