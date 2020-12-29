@@ -9,7 +9,7 @@ from auto_encoder.component import DenseTranspose
 class Autoencoder(tf.keras.Model):
 
     def __init__(self, hidden_dims=(0.6, 0.2), n_layers=3, net_shape='geom', activation='selu', dropout=None,
-                 regularizer=None, tied_weights=True, final_activation=None):
+                 regularizer=None, tied_weights=True, final_activation='sigmoid'):
 
         super().__init__()
         self.hidden_dims = hidden_dims
