@@ -29,14 +29,14 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
 
 if __name__ == '__main__':
     pipe = Pipeline([
-        ('at', AutoTransformer(final_activation='sigmoid', tied_weights=False)),
+        ('at', AutoTransformer(final_activation='sigmoid')),
         ('clf', PipelineHelper([('svm_rbf', SVC(max_iter=500)),
                                 ('log_reg', LogisticRegression(max_iter=500)),
                                 ('xgb', XGBClassifier())]))
     ])
 
     params = {
-        'at__hidden_dims': np.arange(0.05, 2.01, 0.05),
+        'at__hidden_dims': np.arange(0.05, 1.05, 0.05),
         'at__activation': ['selu'],
         'at__n_layers': [3],
         'clf__selected_model': pipe.named_steps['clf'].generate({
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     df = pd.concat(results)
     df.index.names = ('dataset_id', 'idx')
     df.reset_index(level='idx', drop=True, inplace=True)
-    df.to_csv('gridsearchcv_results.csv')
+    df.to_csv('gridsearchcv_results_untied.csv')
 
 
 # Potential parameters for later tests
