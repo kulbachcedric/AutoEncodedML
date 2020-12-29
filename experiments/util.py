@@ -2,7 +2,7 @@ import pandas as pd
 import re
 
 
-def cv_results_to_df(my_dict, cols_expand=['clf']):
+def cv_results_to_df(my_dict, cols_expand=('clf',)):
     df = pd.DataFrame(my_dict).drop('params', axis=1)
     expanded = []
     for col_expand in cols_expand:

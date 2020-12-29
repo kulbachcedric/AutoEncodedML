@@ -4,7 +4,7 @@ from sklearn.utils import resample
 import pandas as pd
 
 
-def get_openml_data(data_id, subsample_size=None, scale='standard'):
+def get_openml_data(data_id, subsample_size=None, scale='minmax'):
     data = datasets.fetch_openml(data_id=data_id, as_frame=True)
     if scale == 'standard':
         scaler = StandardScaler()
