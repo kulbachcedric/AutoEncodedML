@@ -46,7 +46,6 @@ if __name__ == '__main__':
 
     np.random.seed(42)
     results = {}
-    dataset_ids = [44]
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
         # Autoencoder.cache_clear()
