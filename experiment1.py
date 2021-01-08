@@ -8,6 +8,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, get_scorer
 from xgboost import XGBClassifier
+from datetime import datetime
 
 from auto_encoder.sklearn import AutoTransformer
 from data.openml import get_openml_data
@@ -17,7 +18,6 @@ from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
 
 dataset_ids = [40996, 40668, 1492, 44]
-
 
 def test_params(dataset_id, estimator, params, scorers, cv=1):
     x, y = get_openml_data(dataset_id, scale='minmax')
@@ -36,14 +36,13 @@ if __name__ == '__main__':
     ])
 
     params = {
-        'at__hidden_dims': np.arange(0.05, 2.05, 0.05),
-        'at__activation': ['selu'],
-        'at__n_layers': [3],
+        'at__hidden_dims': [0.4],
+        'at__activation': [None, 'selu', 'relu', 'tanh', 'sigmoid'],  # linear?
+        'at__n_layers': [1, 2, 3, 4, 5],
         'clf__selected_model': pipe.named_steps['clf'].generate({
         })
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
-
     np.random.seed(42)
     results = {}
     for dataset_id in dataset_ids:
@@ -53,7 +52,8 @@ if __name__ == '__main__':
     df = pd.concat(results)
     df.index.names = ('dataset_id', 'idx')
     df.reset_index(level='idx', drop=True, inplace=True)
-    df.to_csv('gridsearchcv_results_untied.csv')
+    day = datetime.now().strftime('%j')
+    df.to_csv(f'gridsearchcv_results_{day}.csv')
 
 
 # Potential parameters for later tests
@@ -82,9 +82,17 @@ def optional_params():
     # Test for network depth and activation function
     params2 = {
         'at__hidden_dims': [0.4],
-        'at__dropout': [(0, 0), (0.2, 0.2), (0.2, 0.5)],
-        'at__activation': ['selu', 'relu', 'tanh', 'sigmoid'],  # linear?
+        'at__activation': [None, 'selu', 'relu', 'tanh', 'sigmoid'],  # linear?
         'at__n_layers': [1, 2, 3, 4, 5],
+        'clf__selected_model': pipe.named_steps['clf'].generate({
+        })
+    }
+
+    # Test for latent dim
+    params = {
+        'at__hidden_dims': np.arange(0.05, 2.05, 0.05),
+        'at__activation': ['selu'],
+        'at__n_layers': [3],
         'clf__selected_model': pipe.named_steps['clf'].generate({
         })
     }
