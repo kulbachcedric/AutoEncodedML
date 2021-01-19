@@ -9,6 +9,11 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, get_scorer
 from xgboost import XGBClassifier
 from datetime import datetime
+import tensorflow as tf
+import tensorflow_probability as tfp
+from tensorflow.keras import layers as tfkl
+from tensorflow_probability import layers as tfpl
+from tensorflow_probability import distributions as tfd
 
 from auto_encoder.sklearn import AutoTransformer
 from data.openml import get_openml_data
@@ -16,8 +21,10 @@ from data.util import get_train_test_indices
 from experiments.util import cv_results_to_df
 from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
+from auto_encoder.model import Autoencoder, VAE, get_vae
 
 dataset_ids = [40996, 40668, 1492, 44]
+
 
 def test_params(dataset_id, estimator, params, scorers, cv=1):
     x, y = get_openml_data(dataset_id, scale='minmax')
@@ -28,6 +35,21 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
 
 
 if __name__ == '__main__':
+    np.random.seed(44)
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x_train = x_train.astype("float32") / 255.
+    x_test = x_test.astype("float32") / 255.
+    vae = Autoencoder(hidden_dims=2)
+    vae.compile(loss='binary_crossentropy', optimizer='adam')
+    vae.fit(x_train, x_train, epochs=10)
+    x_encoded = vae.encoder(x_train)
+    df = pd.DataFrame(x_encoded.numpy())
+    from matplotlib import pyplot as plt
+    fig, axs = plt.subplots(211)
+    df[0].hist(ax=axs[0])
+    df[1].hist(ax=axs[1])
+    plt.show()
+    """
     pipe = Pipeline([
         ('at', AutoTransformer(final_activation='sigmoid')),
         ('clf', PipelineHelper([('svm_rbf', SVC(max_iter=500)),
@@ -54,6 +76,7 @@ if __name__ == '__main__':
     df.reset_index(level='idx', drop=True, inplace=True)
     day = datetime.now().strftime('%j')
     df.to_csv(f'gridsearchcv_results_{day}.csv')
+    """
 
 
 # Potential parameters for later tests

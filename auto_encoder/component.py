@@ -1,9 +1,22 @@
 from tensorflow.keras import layers, losses
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tensorflow.keras import backend
 
 
-@tf.keras.utils.register_keras_serializable(package='Custom', name='dense_transpose')
+class Sampling(layers.Layer):
+    def call(self, inputs, **kwargs):
+        mean, log_var = inputs
+        return backend.random_normal(tf.shape(log_var)) * backend.exp(log_var / 2) + mean
+
+
+class LatentLossRegularizer(tf.keras.regularizers.Regularizer):
+    def __call__(self, inputs, **kwargs):
+        mean, logvar = tf.split(inputs, 2, axis=-1)
+        latent_loss = -0.5 * backend.sum(1 + logvar - backend.exp(logvar) - backend.square(mean), axis=-1)
+        return tf.math.reduce_mean(latent_loss)
+
+
 class DenseTranspose(layers.Layer):
     def __init__(self, dense, activation=None, **kwargs):
         self.dense = dense
@@ -23,7 +36,6 @@ class DenseTranspose(layers.Layer):
         return {'dense': self.dense, 'activation': self.activation, 'biases': self.biases}
 
 
-@tf.keras.utils.register_keras_serializable(package='Custom', name='kld')
 class KLDRegularizer(tf.keras.regularizers.Regularizer):
     def __init__(self, weight, target=0.1):
         self.weight = weight
@@ -33,9 +45,6 @@ class KLDRegularizer(tf.keras.regularizers.Regularizer):
         mean_activities = tf.keras.backend.mean(inputs, axis=0)
         return self.weight * (losses.kld(self.target, mean_activities)
                               + losses.kld(1. - self.target, 1. - mean_activities))
-
-    def get_config(self):
-        return {'weight': self.weight, 'target': self.target}
 
 
 class CovRegularizer(layers.Layer):

@@ -1,15 +1,80 @@
 import functools
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
+from tensorflow_probability import distributions as tfd
 from tensorflow.keras import layers
-from auto_encoder.component import DenseTranspose
+from auto_encoder.component import DenseTranspose, Sampling, LatentLossRegularizer
+from tensorflow.keras import backend
 
 
-# @functools.lru_cache(maxsize=5)
+def get_vae(latent_dim):
+    inputs = layers.Input(shape=[28, 28])
+    z = layers.Flatten()(inputs)
+    z = layers.Dense(150, activation="selu")(z)
+    z = layers.Dense(100, activation="selu")(z)
+    codings_mean = layers.Dense(latent_dim)(z)  # μ
+    codings_log_var = layers.Dense(latent_dim)(z)  # γ
+    codings = Sampling()([codings_mean, codings_log_var])
+    variational_encoder = tf.keras.Model(
+        inputs=[inputs], outputs=[codings_mean, codings_log_var, codings])
+
+    decoder_inputs = layers.Input(shape=[latent_dim])
+    x = layers.Dense(100, activation="selu")(decoder_inputs)
+    x = layers.Dense(150, activation="selu")(x)
+    x = layers.Dense(28 * 28, activation="sigmoid")(x)
+    outputs = layers.Reshape([28, 28])(x)
+    variational_decoder = tf.keras.Model(inputs=[decoder_inputs], outputs=[outputs])
+
+    _, _, codings = variational_encoder(inputs)
+    reconstructions = variational_decoder(codings)
+    variational_ae = tf.keras.Model(inputs=[inputs], outputs=[reconstructions])
+
+    latent_loss = -0.5 * backend.sum(
+        1 + codings_log_var - backend.exp(codings_log_var) - backend.square(codings_mean),
+        axis=-1)
+    variational_ae.add_loss(tf.math.reduce_mean(latent_loss) / 784.)
+    return variational_ae
+
+
+class VAE(tf.keras.Model):
+    def __init__(self, latent_dim):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.encoder = None
+        self.decoder = None
+
+    def build(self, input_shape):
+        self.encoder = tf.keras.Sequential([
+            layers.Input(input_shape[1:]),
+            layers.Flatten(),
+            layers.Dense(150, activation='selu'),
+            layers.Dense(100, activation='selu'),
+            layers.Dense(self.latent_dim * 2, activity_regularizer=LatentLossRegularizer())
+        ])
+
+
+        self.decoder = tf.keras.Sequential([
+            layers.Input([self.latent_dim]),
+            layers.Dense(100, activation='selu'),
+            layers.Dense(150, activation='selu'),
+            layers.Dense(28*28, activation='sigmoid'),
+            layers.Reshape(input_shape[1:])
+        ])
+
+    def call(self, inputs, training=None, mask=None):
+        encoded = self.encoder(inputs)
+        # TODO: replace with sampling layer
+        mean, log_var = tf.split(encoded, 2, axis=-1)
+        z = backend.random_normal(tf.shape(log_var)) * backend.exp(log_var / 2) + mean
+        decoded = self.decoder(z)
+        return decoded
+
+
 class Autoencoder(tf.keras.Model):
 
-    def __init__(self, hidden_dims=(0.6, 0.2), n_layers=3, net_shape='geom', activation='selu', dropout=None,
-                 regularizer=None, tied_weights=True, final_activation='sigmoid'):
+    def __init__(self, hidden_dims=0.2, n_layers=3, net_shape='geom', activation='selu', dropout=None,
+                 regularizer=None, tied_weights=True, variational=False, final_activation='sigmoid'):
 
         super().__init__()
         self.hidden_dims = hidden_dims
@@ -44,8 +109,10 @@ class Autoencoder(tf.keras.Model):
             layers_encoder.append(layers.Dense(dim, activation=self.activation))
             if hidden_dropout and hidden_dropout > 0:
                 layers_encoder.append(layers.Dropout(hidden_dropout))
-        layers_encoder.append(
-            layers.Dense(self.hidden_dims_abs[-1], self.activation, activity_regularizer=self.regularizer))
+
+        else:
+            layers_encoder.append(
+                layers.Dense(self.hidden_dims_abs[-1], self.activation, activity_regularizer=self.regularizer))
 
         if self.tied_weights:
             dense_layers = [layer for layer in layers_encoder[::-1] if isinstance(layer, layers.Dense)]
@@ -55,6 +122,7 @@ class Autoencoder(tf.keras.Model):
         else:
             for dim in self.hidden_dims_abs[1::-1]:
                 layers_decoder.append(layers.Dense(dim, activation=self.activation))
+
             layers_decoder.append(layers.Dense(np.prod(input_shape), activation=self.final_activation))
 
         if isinstance(input_shape, tuple) and len(input_shape) > 1:
@@ -89,7 +157,6 @@ class Autoencoder(tf.keras.Model):
         return tuple(dims)
 
 
-@functools.lru_cache(maxsize=5)
 class ConvAutoencoder(tf.keras.Model):
     def __init__(self, filters_base=8, pooling=2, k_size=3, n_conv=2, strides=1,
                  activation='relu', dropout=0.5, latent_dim=0.05, regularizer=None):
