@@ -7,23 +7,21 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, get_scorer
-from xgboost import XGBClassifier
 from datetime import datetime
 import tensorflow as tf
-import tensorflow_probability as tfp
-from tensorflow.keras import layers as tfkl
-from tensorflow_probability import layers as tfpl
-from tensorflow_probability import distributions as tfd
 
-from auto_encoder.sklearn import AutoTransformer
+from auto_encoder.sklearn import AutoTransformer, Transformer
 from data.openml import get_openml_data
 from data.util import get_train_test_indices
 from experiments.util import cv_results_to_df
 from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
-from auto_encoder.model import Autoencoder, VAE, get_vae
+from auto_encoder.model import *
 
-dataset_ids = [40996, 40668, 1492, 44]
+
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True) #TODO: !!!!CHECK GPU!!!!
+np.random.seed(42)
 
 
 def test_params(dataset_id, estimator, params, scorers, cv=1):
@@ -34,56 +32,42 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
     return cv_results_to_df(grid.cv_results_)
 
 
-if __name__ == '__main__':
-    np.random.seed(44)
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    x_train = x_train.astype("float32") / 255.
-    x_test = x_test.astype("float32") / 255.
-    vae = Autoencoder(hidden_dims=2)
-    vae.compile(loss='binary_crossentropy', optimizer='adam')
-    vae.fit(x_train, x_train, epochs=10)
-    x_encoded = vae.encoder(x_train)
-    df = pd.DataFrame(x_encoded.numpy())
-    from matplotlib import pyplot as plt
-    fig, axs = plt.subplots(211)
-    df[0].hist(ax=axs[0])
-    df[1].hist(ax=axs[1])
-    plt.show()
-    """
-    pipe = Pipeline([
-        ('at', AutoTransformer(final_activation='sigmoid')),
-        ('clf', PipelineHelper([('svm_rbf', SVC(max_iter=500)),
-                                ('log_reg', LogisticRegression(max_iter=500)),
-                                ('xgb', XGBClassifier())]))
-    ])
+def run_gridsearch(dataset_ids):
 
+    pipe = Pipeline([
+        ('ae', AutoTransformer()),
+        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='sag'))
+    ])
     params = {
-        'at__hidden_dims': [0.4],
-        'at__activation': [None, 'selu', 'relu', 'tanh', 'sigmoid'],  # linear?
-        'at__n_layers': [1, 2, 3, 4, 5],
-        'clf__selected_model': pipe.named_steps['clf'].generate({
-        })
+        'ae__type': ['ae', 'vae', 'dae', 'sae'],
+        'ae__hidden_dims': np.arange(0.05, 2.05, 0.05)
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
-    np.random.seed(42)
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
-        # Autoencoder.cache_clear()
-        results[dataset_id] = test_params(dataset_id=dataset_id, estimator=pipe, params=params, scorers=scorers, cv=3)
+        x, y = get_openml_data(dataset_id, scale='minmax')
+        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=3, scoring=scorers, refit=False)
+        grid.fit(x, y)
+        results[dataset_id] = pd.DataFrame(grid.cv_results_)
+
     df = pd.concat(results)
     df.index.names = ('dataset_id', 'idx')
     df.reset_index(level='idx', drop=True, inplace=True)
     day = datetime.now().strftime('%j')
     df.to_csv(f'gridsearchcv_results_{day}.csv')
-    """
+
+
+if __name__ == '__main__':
+    datasets = [40996, 40668, 1492, 44]
+    run_gridsearch(datasets)
 
 
 # Potential parameters for later tests
 def optional_params():
     pipe = Pipeline([
         ('transformer', PipelineHelper([
-            ('at', AutoTransformer(tied_weights=False, final_activation='sigmoid')),
+            ('at', AutoTransformer()),
             ('pca', PCA()),
         ])),
         ('clf', PipelineHelper([
