@@ -26,7 +26,7 @@ class AE(tf.keras.Model):
                                                       input_shape=input_shape)
         self.get_encoder_decoder(input_shape)
 
-    def get_encoder_decoder(self, input_shape):
+    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid'):
         layers_encoder = []
         layers_decoder = []
         if self.dropout and self.dropout > 0:
@@ -36,7 +36,7 @@ class AE(tf.keras.Model):
             layers_encoder.append(layers.Dense(dim, activation=self.activation))
 
         layers_encoder.append(
-            layers.Dense(self.hidden_dims[-1], self.activation, activity_regularizer=self.regularizer))
+            layers.Dense(self.hidden_dims[-1], latent_activation, activity_regularizer=self.regularizer))
 
         if self.tied_weights:
             dense_layers = [layer for layer in layers_encoder[::-1] if isinstance(layer, layers.Dense)]
@@ -52,8 +52,8 @@ class AE(tf.keras.Model):
             layers_decoder.append(layers.Reshape(input_shape))
             layers_encoder.insert(0, layers.Flatten(input_shape=input_shape))
 
-        self.encoder = tf.keras.Sequential(layers_encoder)
-        self.decoder = tf.keras.Sequential(layers_decoder)
+        self.encoder = tf.keras.Sequential(layers_encoder, name='Encoder')
+        self.decoder = tf.keras.Sequential(layers_decoder, name='Decoder')
 
     def call(self, x, **kwargs):
         encoded = self.encoder(x)
@@ -104,7 +104,7 @@ class VAE(AE):
         self.hidden_dims = self.calculate_hidden_dims(hidden_dims=self.hidden_dims, n_layers=self.n_layers,
                                                       input_shape=input_shape)
         self.hidden_dims[-1] *= 2
-        self.get_encoder_decoder(input_shape)
+        self.get_encoder_decoder(input_shape, latent_activation='linear')
 
     def call(self, x, training=None, mask=None):
         encoded = self.encoder(x)
@@ -146,7 +146,7 @@ class CAE(tf.keras.Model):
             self.latent_dim = np.round(self.latent_dim * np.prod(input_shape)).astype(int)
         self.get_encoder_decoder(input_shape)
 
-    def get_encoder_decoder(self, input_shape):
+    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid'):
         layers_encoder = [layers.Input(input_shape)]
         layers_decoder = []
         if self.dropout and self.dropout > 0:
@@ -166,18 +166,18 @@ class CAE(tf.keras.Model):
             if self.pooling and self.pooling > 0:
                 layers_encoder.append(layers.MaxPool2D(pool_size=self.pooling))
                 layers_decoder.append(layers.UpSampling2D(size=self.pooling))
-        self.encoder = tf.keras.Sequential(layers_encoder)
+        self.encoder = tf.keras.Sequential(layers_encoder, name='Encoder')
         decoder_output = encoder_output = self.encoder.compute_output_shape((None,) + input_shape)
         self.encoder.add(layers.Flatten())
         self.encoder.add(
-            layers.Dense(self.latent_dim, activation=self.activation, activity_regularizer=self.regularizer))
+            layers.Dense(self.latent_dim, activation=latent_activation, activity_regularizer=self.regularizer))
         for layer in layers_decoder:
             decoder_output = layer.compute_output_shape(decoder_output)
         layers_decoder[0:0] = [layers.Dense(np.prod(encoder_output[1:]), activation=self.activation),
                                layers.Reshape(encoder_output[1:])]
         layers_decoder.append(
             layers.Conv2DTranspose(input_shape[-1], input_shape[1] + 1 - decoder_output[1], activation='sigmoid'))
-        self.decoder = tf.keras.Sequential(layers_decoder)
+        self.decoder = tf.keras.Sequential(layers_decoder, name='Decoder')
 
     def call(self, x, **kwargs):
         encoded = self.encoder(x)
@@ -208,7 +208,7 @@ class CVAE(CAE):
         self.regularizer = LatentLossRegularizer(1 / np.prod(input_shape))
         if isinstance(self.latent_dim, float):
             self.latent_dim = np.round(self.latent_dim * np.prod(input_shape)).astype(int)
-        self.get_encoder_decoder(input_shape)
+        self.get_encoder_decoder(input_shape, latent_activation='linear')
 
     def call(self, x, **kwargs):
         encoded = self.encoder(x)
