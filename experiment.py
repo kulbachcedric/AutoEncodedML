@@ -18,9 +18,6 @@ from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
 from auto_encoder.model import *
 
-
-physical_devices = tf.config.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True) #TODO: !!!!CHECK GPU!!!!
 np.random.seed(42)
 
 
@@ -33,21 +30,20 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
 
 
 def run_gridsearch(dataset_ids):
-
     pipe = Pipeline([
         ('ae', AutoTransformer()),
-        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='sag'))
+        ('clf', LogisticRegression(max_iter=1000))
     ])
     params = {
-        'ae__type': ['ae', 'vae', 'dae', 'sae'],
-        'ae__hidden_dims': np.arange(0.05, 2.05, 0.05)
+        'ae__type': ['ae'],
+        'ae__hidden_dims': np.arange(0.05, 0.35, 0.05)
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
         x, y = get_openml_data(dataset_id, scale='minmax')
-        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=3, scoring=scorers, refit=False)
+        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=3, scoring=scorers, refit=False, verbose=2)
         grid.fit(x, y)
         results[dataset_id] = pd.DataFrame(grid.cv_results_)
 
@@ -60,21 +56,19 @@ def run_gridsearch(dataset_ids):
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    run_gridsearch(datasets)
+    run_gridsearch([44])
 
 
 # Potential parameters for later tests
 def optional_params():
     pipe = Pipeline([
-        ('transformer', PipelineHelper([
-            ('at', AutoTransformer()),
-            ('pca', PCA()),
-        ])),
-        ('clf', PipelineHelper([
-            ('svm_rbf', SVC(max_iter=500)),
-            ('log_reg', LogisticRegression(max_iter=500)),
-        ]))
+        ('ae', AutoTransformer()),
+        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='sag'))
     ])
+    params = {
+        'ae__type': ['ae'],
+        'ae__hidden_dims': [np.arange(0.05, 2.05, 0.05)]
+    }
 
     # Test for different transformators
     params_trafos = {

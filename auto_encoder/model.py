@@ -176,7 +176,8 @@ class CAE(tf.keras.Model):
         layers_decoder[0:0] = [layers.Dense(np.prod(encoder_output[1:]), activation=self.activation),
                                layers.Reshape(encoder_output[1:])]
         layers_decoder.append(
-            layers.Conv2DTranspose(input_shape[-1], input_shape[1] + 1 - decoder_output[1], activation='sigmoid'))
+            layers.Conv2DTranspose(input_shape[-1], input_shape[1] + 1 - decoder_output[1],
+                                   activation=self.output_activation))
         self.decoder = tf.keras.Sequential(layers_decoder, name='Decoder')
 
     def call(self, x, **kwargs):
