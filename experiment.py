@@ -1,22 +1,18 @@
-import numpy as np
+from datetime import datetime
+
 import pandas as pd
-from pipelinehelper import PipelineHelper
-from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import get_scorer
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, get_scorer
-from datetime import datetime
-import tensorflow as tf
 
-from auto_encoder.sklearn import AutoTransformer, Transformer
+from auto_encoder.model import *
+from auto_encoder.sklearn import AutoTransformer
 from data.openml import get_openml_data
 from data.util import get_train_test_indices
-from experiments.util import cv_results_to_df
+from experiments.util import cv_results_to_df, remove_col_prefix
 from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
-from auto_encoder.model import *
 
 np.random.seed(42)
 
@@ -29,21 +25,21 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
     return cv_results_to_df(grid.cv_results_)
 
 
-def run_gridsearch(dataset_ids):
+def run_gridsearch(dataset_ids, data_scaling='minmax'):
     pipe = Pipeline([
         ('ae', AutoTransformer()),
-        ('clf', LogisticRegression(max_iter=1000))
+        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='saga'))
     ])
     params = {
-        'ae__type': ['ae'],
-        'ae__hidden_dims': np.arange(0.05, 0.35, 0.05)
+        'ae__type': ['ae', 'dae', 'sae', 'vae'],
+        'ae__hidden_dims': np.arange(0.05, 2.05, 0.05)
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
-        x, y = get_openml_data(dataset_id, scale='minmax')
-        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=3, scoring=scorers, refit=False, verbose=2)
+        x, y = get_openml_data(dataset_id, scale=data_scaling)
+        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=2, scoring=scorers, refit=False, verbose=2)
         grid.fit(x, y)
         results[dataset_id] = pd.DataFrame(grid.cv_results_)
 
@@ -52,11 +48,13 @@ def run_gridsearch(dataset_ids):
     df.reset_index(level='idx', drop=True, inplace=True)
     day = datetime.now().strftime('%j')
     df.to_csv(f'gridsearchcv_results_{day}.csv')
+    df = remove_col_prefix(df)
+    df.to_csv(f'gridsearchcv_results_{day}.csv')
 
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    run_gridsearch([44])
+    run_gridsearch(datasets)
 
 
 # Potential parameters for later tests

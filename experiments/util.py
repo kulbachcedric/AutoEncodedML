@@ -17,3 +17,8 @@ def cv_results_to_df(my_dict, cols_expand=('clf',)):
     result = pd.concat(sub_dfs, axis=1)
     result.columns = [re.sub("param.*__", "", col) for col in result.columns]
     return result
+
+
+def remove_col_prefix(df):
+    df.columns = [re.sub("param.*__", "", col) for col in df.columns]
+    return df
