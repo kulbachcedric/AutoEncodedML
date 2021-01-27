@@ -16,11 +16,12 @@ def get_openml_data(data_id, subsample_size=None, scale='minmax'):
     cat_columns = data['data'].loc[:, selector].columns
     x = pd.get_dummies(data['data'], columns=cat_columns, drop_first=True)
     y = data['target']
+    x, y = resample(x, y, n_samples=subsample_size, stratify=y)
 
-    if subsample_size:
-        x, y = resample(x, y, n_samples=subsample_size, stratify=y)
-
-    x = scaler.fit_transform(x)
+    if scale:
+        x = scaler.fit_transform(x)
+    else:
+        x = x.to_numpy()
     y = label_enc.fit_transform(y)
 
     return x, y
