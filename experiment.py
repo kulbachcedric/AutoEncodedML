@@ -1,13 +1,14 @@
 from datetime import datetime
 
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.metrics import get_scorer
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from auto_encoder.model import *
-from auto_encoder.sklearn import AutoTransformer
+from auto_encoder.sklearn import AutoTransformer, SoftmaxClassifier
 from data.openml import get_openml_data
 from data.util import get_train_test_indices
 from experiments.util import cv_results_to_df, remove_col_prefix
@@ -15,6 +16,9 @@ from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
 
 np.random.seed(42)
+
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 
 def test_params(dataset_id, estimator, params, scorers, cv=1):
@@ -25,21 +29,21 @@ def test_params(dataset_id, estimator, params, scorers, cv=1):
     return cv_results_to_df(grid.cv_results_)
 
 
-def run_gridsearch(dataset_ids, data_scaling='minmax'):
+def run_gridsearch(dataset_ids, data_scaling='minmax', cv=3):
     pipe = Pipeline([
         ('ae', AutoTransformer()),
-        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='saga'))
+        ('clf', LogisticRegression(penalty='none', max_iter=500))
     ])
     params = {
-        'ae__type': ['ae', 'dae', 'sae', 'vae'],
-        'ae__hidden_dims': np.arange(0.05, 2.05, 0.05)
+        'clf__multi_class': ['ovr']
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
         x, y = get_openml_data(dataset_id, scale=data_scaling)
-        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=2, scoring=scorers, refit=False, verbose=2)
+        splits = [get_train_test_indices(y)] if cv == 1 else cv
+        grid = GridSearchCV(estimator=pipe, param_grid=params, cv=splits, scoring=scorers, refit=False, verbose=2)
         grid.fit(x, y)
         results[dataset_id] = pd.DataFrame(grid.cv_results_)
 
@@ -52,16 +56,30 @@ def run_gridsearch(dataset_ids, data_scaling='minmax'):
     df.to_csv(f'gridsearchcv_results_{day}.csv')
 
 
+def test_classifiers(dataset_id):
+    x, y = get_openml_data(dataset_id, scale='minmax')
+    idx_train, idx_test = get_train_test_indices(y)
+    at = AutoTransformer()
+    x_encoded = at.fit_transform(x)
+    clf = SoftmaxClassifier(max_epochs=5000)
+    params = {
+        'learning_rate': [1e-4, 1e-3, 1e-2]
+    }
+    grid = GridSearchCV(estimator=clf, param_grid=params, cv=[(idx_train, idx_test)], refit=False, verbose=2)
+    grid.fit(x_encoded, y)
+    return pd.DataFrame(grid.cv_results_)
+
+
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    run_gridsearch(datasets)
+    run_gridsearch(datasets, cv=3)
 
 
 # Potential parameters for later tests
 def optional_params():
     pipe = Pipeline([
         ('ae', AutoTransformer()),
-        ('clf', LogisticRegression(max_iter=1000, penalty='none', solver='sag'))
+        ('clf', LogisticRegression(max_iter=500, penalty='none', solver='sag'))
     ])
     params = {
         'ae__type': ['ae'],

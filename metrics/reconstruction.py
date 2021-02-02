@@ -1,11 +1,12 @@
-from sklearn.base import TransformerMixin
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.pipeline import Pipeline
+
+from auto_encoder.sklearn import Transformer
 
 
 def find_transformer(pipe):
     for step in pipe.named_steps.values():
-        if isinstance(step, TransformerMixin):
+        if isinstance(step, Transformer):
             return step
 
 
