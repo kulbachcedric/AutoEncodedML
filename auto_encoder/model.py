@@ -5,7 +5,7 @@ from auto_encoder.component import DenseTranspose, Sampling, LatentLossRegulariz
 
 
 class AE(tf.keras.Model):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', tied_weights=True, dropout=None,
+    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', tied_weights=True, dropout=None, hidden_dropout=None,
                  regularizer=None, output_activation='sigmoid'):
 
         super().__init__()
@@ -19,6 +19,7 @@ class AE(tf.keras.Model):
         self.encoder = None
         self.decoder = None
         self.latent_dim = None
+        self.hidden_dropout = hidden_dropout
 
     def build(self, input_shape):
         input_shape = input_shape[1:]
@@ -34,6 +35,8 @@ class AE(tf.keras.Model):
 
         for dim in self.hidden_dims[:-1]:
             layers_encoder.append(layers.Dense(dim, activation=self.activation))
+            if self.hidden_dropout:
+                layers_encoder.append(layers.Dropout(self.hidden_dropout))
 
         layers_encoder.append(
             layers.Dense(self.hidden_dims[-1], latent_activation, activity_regularizer=self.regularizer))
