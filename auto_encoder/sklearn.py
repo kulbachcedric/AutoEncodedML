@@ -63,7 +63,7 @@ class AutoTransformer(Transformer):
             self.model = self.type
         else:
             self.model = Transformer.models[self.type](self.hidden_dims, self.n_layers, self.activation,
-                                                       self.output_activation, dropout=self.dropout, hidden_dropout=self.hidden_dropout)
+                                                       self.output_activation)
         self.model.compile(loss=self.loss, optimizer=self.optimizer)
         self.model.fit(X, X, epochs=self.max_epochs, validation_split=0.1, callbacks=[self.callback])
         tf.keras.backend.clear_session()

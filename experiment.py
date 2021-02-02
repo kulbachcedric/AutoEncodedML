@@ -35,7 +35,8 @@ def run_gridsearch(dataset_ids, data_scaling='minmax', cv=3):
         ('clf', LogisticRegression(penalty='none', max_iter=500))
     ])
     params = {
-        'clf__multi_class': ['ovr']
+        'ae__hidden_dims': np.arange(0.05, 2.01, 0.05),
+        'ae__type': ['vae', 'ae', 'dae', 'sae']
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
     results = {}
@@ -72,7 +73,7 @@ def test_classifiers(dataset_id):
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    run_gridsearch(datasets, cv=3)
+    run_gridsearch(datasets[::-1], cv=3)
 
 
 # Potential parameters for later tests
