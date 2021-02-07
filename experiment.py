@@ -17,9 +17,6 @@ from metrics.robustness import AdversarialRobustness, NoiseRobustness
 
 np.random.seed(42)
 
-physical_devices = tf.config.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 
 def test_params(dataset_id, estimator, params, scorers, cv=1):
     x, y = get_openml_data(dataset_id, scale='minmax')
@@ -35,8 +32,8 @@ def run_gridsearch(dataset_ids, data_scaling='minmax', cv=3):
         ('clf', LogisticRegression(penalty='none', max_iter=500))
     ])
     params = {
+        'ae__type': ['vae'],
         'ae__hidden_dims': np.arange(0.05, 2.01, 0.05),
-        'ae__type': ['vae', 'ae', 'dae', 'sae']
     }
     scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
     results = {}
@@ -52,7 +49,6 @@ def run_gridsearch(dataset_ids, data_scaling='minmax', cv=3):
     df.index.names = ('dataset_id', 'idx')
     df.reset_index(level='idx', drop=True, inplace=True)
     day = datetime.now().strftime('%j')
-    df.to_csv(f'gridsearchcv_results_{day}.csv')
     df = remove_col_prefix(df)
     df.to_csv(f'gridsearchcv_results_{day}.csv')
 

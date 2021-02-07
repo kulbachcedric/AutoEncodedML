@@ -5,8 +5,8 @@ from auto_encoder.component import DenseTranspose, Sampling, LatentLossRegulariz
 
 
 class AE(tf.keras.Model):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', tied_weights=True, dropout=None, hidden_dropout=None,
-                 regularizer=None, output_activation='sigmoid'):
+    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', tied_weights=True, dropout=None,
+                 hidden_dropout=None, regularizer=None, output_activation='sigmoid'):
 
         super().__init__()
         self.hidden_dims = hidden_dims
@@ -27,7 +27,7 @@ class AE(tf.keras.Model):
                                                       input_shape=input_shape)
         self.get_encoder_decoder(input_shape)
 
-    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid'):
+    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid', latent_init='glorot_uniform'):
         layers_encoder = []
         layers_decoder = []
         if self.dropout and self.dropout > 0:
@@ -39,7 +39,8 @@ class AE(tf.keras.Model):
                 layers_encoder.append(layers.Dropout(self.hidden_dropout))
 
         layers_encoder.append(
-            layers.Dense(self.hidden_dims[-1], latent_activation, activity_regularizer=self.regularizer))
+            layers.Dense(self.hidden_dims[-1], latent_activation, kernel_initializer=latent_init,
+                         activity_regularizer=self.regularizer))
 
         if self.tied_weights:
             dense_layers = [layer for layer in layers_encoder[::-1] if isinstance(layer, layers.Dense)]
@@ -81,6 +82,9 @@ class AE(tf.keras.Model):
     def encode(self, x):
         return self.encoder(x)
 
+    def decode(self, x):
+        return self.decoder(x)
+
 
 class DAE(AE):
     def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid'):
@@ -96,18 +100,19 @@ class SAE(AE):
 
 
 class VAE(AE):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid'):
+    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid', beta=0.1):
         super().__init__(hidden_dims, n_layers=n_layers, activation=activation, output_activation=output_activation,
                          tied_weights=False, dropout=None)
         self.sampling = Sampling()
+        self.beta = beta
 
     def build(self, input_shape):
         input_shape = input_shape[1:]
-        self.regularizer = LatentLossRegularizer(1 / np.prod(input_shape))
+        self.regularizer = LatentLossRegularizer(self.beta)
         self.hidden_dims = self.calculate_hidden_dims(hidden_dims=self.hidden_dims, n_layers=self.n_layers,
                                                       input_shape=input_shape)
         self.hidden_dims[-1] *= 2
-        self.get_encoder_decoder(input_shape, latent_activation='linear')
+        self.get_encoder_decoder(input_shape, latent_activation='linear', latent_init='zeros')
 
     def call(self, x, training=None, mask=None):
         encoded = self.encoder(x)
