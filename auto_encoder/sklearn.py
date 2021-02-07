@@ -42,7 +42,7 @@ class Transformer(BaseEstimator, TransformerMixin):
         return self.model.encode(X).numpy()
 
     def inverse_transform(self, X):
-        return self.model.decoder(X).numpy()
+        return self.model.decode(X).numpy()
 
 
 class AutoTransformer(Transformer):
@@ -62,8 +62,9 @@ class AutoTransformer(Transformer):
         if isinstance(self.type, tf.keras.Model):
             self.model = self.type
         else:
-            self.model = Transformer.models[self.type](self.hidden_dims, self.n_layers, self.activation,
-                                                       self.output_activation)
+            self.model = Transformer.models[self.type](hidden_dims=self.hidden_dims, n_layers=self.n_layers,
+                                                       activation=self.activation,
+                                                       output_activation=self.output_activation)
         self.model.compile(loss=self.loss, optimizer=self.optimizer)
         self.model.fit(X, X, epochs=self.max_epochs, validation_split=0.1, callbacks=[self.callback])
         tf.keras.backend.clear_session()

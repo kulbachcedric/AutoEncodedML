@@ -1,24 +1,25 @@
 from tensorflow.keras import layers, losses
 import tensorflow as tf
-import tensorflow_probability as tfp
 from tensorflow.keras import backend
 
 
 class Sampling(layers.Layer):
     def call(self, inputs, **kwargs):
         mean, log_var = tf.split(inputs, 2, axis=-1)
+        log_var = backend.clip(log_var, -3, 3)
         z = backend.random_normal(tf.shape(log_var)) * backend.exp(log_var / 2) + mean
         return mean, log_var, z
 
 
 class LatentLossRegularizer(tf.keras.regularizers.Regularizer):
-    def __init__(self, weight=None):
+    def __init__(self, weight=0.1):
         self.weight = weight
+        self.sampling = Sampling()
 
     def __call__(self, inputs, **kwargs):
         if not self.weight:
-            self.weight = 1. / inputs.shape[-1]
-        mean, logvar = tf.split(inputs, 2, axis=-1)
+            self.weight = 1.0 / inputs.shape[-1]
+        mean, logvar, _ = self.sampling(inputs)
         latent_loss = -0.5 * backend.sum(1 + logvar - backend.exp(logvar) - backend.square(mean), axis=-1)
         return backend.sum(latent_loss) * self.weight
 
@@ -56,7 +57,7 @@ class CovRegularizer(layers.Layer):
         self.weight = weight
 
     def call(self, inputs, **kwargs):
-        covariance = tfp.stats.covariance(inputs)
+        covariance = [1, 2]  # tfp.stats.covariance(inputs)
 
         if covariance.shape[0] <= 1:
             penalty = 0.0
