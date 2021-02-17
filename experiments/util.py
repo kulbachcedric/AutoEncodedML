@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import numpy as np
 
 
 def cv_results_to_df(my_dict, cols_expand=('clf',)):
@@ -21,4 +22,13 @@ def cv_results_to_df(my_dict, cols_expand=('clf',)):
 
 def remove_col_prefix(df):
     df.columns = [re.sub("param.*__", "", col) for col in df.columns]
+    return df
+
+
+def compute_means(df):
+    prefixes = np.unique([re.split('[0-9]', col)[-1] for col in df.columns if re.search('[0-9]', col)])
+    for prefix in prefixes:
+        cols = [col for col in df.columns if prefix in col]
+        df['mean' + prefix] = df[cols].aggregate('mean', axis=1)
+
     return df

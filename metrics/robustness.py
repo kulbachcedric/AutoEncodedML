@@ -9,7 +9,7 @@ from sklearn.utils import resample
 
 from auto_encoder.sklearn import AutoTransformer
 from data.openml import get_openml_data
-from data.util import corrupt_gaussian, corrupt_zero_mask
+from data.util import corrupt_gaussian, corrupt_with_mask
 
 
 class AdversarialRobustness:
@@ -45,7 +45,7 @@ class NoiseRobustness:
         if callable(corruption):
             self.corrupt = corruption
         else:
-            self.corrupt = corrupt_zero_mask if corruption == 'zero_mask' else corrupt_gaussian
+            self.corrupt = corrupt_with_mask if corruption == 'zero_mask' else corrupt_gaussian
         if callable(scoring):
             self.scorer = scoring
         else:
@@ -55,13 +55,3 @@ class NoiseRobustness:
     def __call__(self, estimator, X, y_true, sample_weight=None):
         X_corrupted = self.corrupt(X, scale=self.scale)
         return self.scorer(estimator, X_corrupted, y_true)
-
-
-if __name__ == '__main__':
-    x, y = get_openml_data(44)
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2)
-    clf = Pipeline([('at', AutoTransformer(max_epochs=5)),
-                    ('log_reg', LogisticRegression(max_iter=500))])  # LogisticRegression(max_iter=500)
-    clf.fit(x_train, y_train)
-    adv_metric = AdversarialRobustness(sample_size=10, attack='zoo')
-    print(adv_metric(clf, x_test, y_test))

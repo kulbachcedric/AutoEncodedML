@@ -9,17 +9,21 @@ def get_train_test_indices(data, test_size=0.2):
     return indices_train, indices_test
 
 
-def corrupt_zero_mask(data, scale=0.5):
-    data_masked = []
-    for sample in data:
-        sample_flat = sample.flatten()
-        zeros = np.zeros_like(sample_flat)
-        indices = np.random.choice(np.arange(zeros.size), replace=False, size=int(zeros.size * (1. - scale)))
-        zeros[indices] = sample_flat[indices]
-        sample_masked = np.reshape(zeros, sample.shape)
-        data_masked.append(sample_masked)
-    return np.array(data_masked)
+def corrupt_with_mask(data, noise_level=0.5, pepper=True):
+    num_zeros = round(noise_level * np.prod(data.shape[1:]))
+    out = np.copy(data)
+    mins = np.min(data, axis=0)
+    maxs = np.max(data, axis=0)
+    for sample in out:
+        indices = np.array([np.random.choice(np.arange(i), num_zeros, replace=False) for i in sample.shape])
+        sample[indices] = np.where(np.random.randint(0, 2) == 1, mins[indices], maxs[indices]) if pepper else mins[
+            indices]
+    return out
 
 
-def corrupt_gaussian(data, scale=0.5):
-    return data + np.random.normal(size=data.shape, scale=scale)
+def corrupt_gaussian(data, noise_level=0.5):
+    std = np.diag(np.std(data, axis=0))
+    mean = np.zeros(data.shape[1:])
+    noise = np.random.multivariate_normal(mean=mean, size=data.shape[0], cov=std)
+    return data + noise_level * noise
+
