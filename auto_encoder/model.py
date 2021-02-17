@@ -5,8 +5,8 @@ from auto_encoder.component import DenseTranspose, Sampling, LatentLossRegulariz
 
 
 class AE(tf.keras.Model):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', tied_weights=True, dropout=None,
-                 hidden_dropout=None, regularizer=None, output_activation='sigmoid'):
+    def __init__(self, hidden_dims=0.35, n_layers=3, activation='selu', tied_weights=True, dropout=None,
+                 hidden_dropout=None, regularizer=None, output_activation='sigmoid', latent_activation='sigmoid'):
 
         super().__init__()
         self.hidden_dims = hidden_dims
@@ -19,6 +19,7 @@ class AE(tf.keras.Model):
         self.encoder = None
         self.decoder = None
         self.latent_dim = None
+        self.latent_activation = latent_activation
         self.hidden_dropout = hidden_dropout
 
     def build(self, input_shape):
@@ -27,7 +28,7 @@ class AE(tf.keras.Model):
                                                       input_shape=input_shape)
         self.get_encoder_decoder(input_shape)
 
-    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid', latent_init='glorot_uniform'):
+    def get_encoder_decoder(self, input_shape, latent_init='glorot_uniform'):
         layers_encoder = []
         layers_decoder = []
         if self.dropout and self.dropout > 0:
@@ -39,7 +40,7 @@ class AE(tf.keras.Model):
                 layers_encoder.append(layers.Dropout(self.hidden_dropout))
 
         layers_encoder.append(
-            layers.Dense(self.hidden_dims[-1], latent_activation, kernel_initializer=latent_init,
+            layers.Dense(self.hidden_dims[-1], self.latent_activation, kernel_initializer=latent_init,
                          activity_regularizer=self.regularizer))
 
         if self.tied_weights:
@@ -48,7 +49,7 @@ class AE(tf.keras.Model):
                 layers_decoder.append(DenseTranspose(layer, activation=self.activation))
             layers_decoder.append(DenseTranspose(dense_layers[-1], activation=self.output_activation))
         else:
-            for dim in self.hidden_dims[1::-1]:
+            for dim in self.hidden_dims[-2::-1]:
                 layers_decoder.append(layers.Dense(dim, activation=self.activation))
             layers_decoder.append(layers.Dense(np.prod(input_shape), activation=self.output_activation))
 
@@ -87,32 +88,37 @@ class AE(tf.keras.Model):
 
 
 class DAE(AE):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid'):
-        super(DAE, self).__init__(hidden_dims, n_layers=n_layers, activation=activation,
-                                  output_activation=output_activation, dropout=0.2)
+    def __init__(self, hidden_dims=0.35, n_layers=3, activation='selu', output_activation='sigmoid',
+                 latent_activation='sigmoid'):
+        super(DAE, self).__init__(hidden_dims, n_layers=n_layers, activation=activation, dropout=0.2,
+                                  output_activation=output_activation, latent_activation=latent_activation)
 
 
 class SAE(AE):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid'):
-        super(SAE, self).__init__(hidden_dims, n_layers=n_layers, activation=activation,
-                                  output_activation=output_activation, regularizer=KLDRegularizer(0.05),
-                                  tied_weights=False)
+    def __init__(self, hidden_dims=0.35, n_layers=3, activation='selu', output_activation='sigmoid',
+                 latent_activation='sigmoid'):
+        super(SAE, self).__init__(hidden_dims, n_layers=n_layers, activation=activation, tied_weights=False,
+                                  regularizer=KLDRegularizer(0.05), output_activation=output_activation,
+                                  latent_activation=latent_activation)
 
 
 class VAE(AE):
-    def __init__(self, hidden_dims=0.2, n_layers=3, activation='selu', output_activation='sigmoid', beta=0.1):
-        super().__init__(hidden_dims, n_layers=n_layers, activation=activation, output_activation=output_activation,
-                         tied_weights=False, dropout=None)
+    def __init__(self, hidden_dims=0.35, n_layers=3, activation='selu', output_activation='sigmoid',
+                 latent_activation='linear', beta=None):
+        super().__init__(hidden_dims, n_layers=n_layers, activation=activation, tied_weights=False, dropout=None,
+                         output_activation=output_activation, latent_activation='linear')
         self.sampling = Sampling()
         self.beta = beta
 
     def build(self, input_shape):
         input_shape = input_shape[1:]
+        if not self.beta:
+            self.beta = 1/np.prod(input_shape)
         self.regularizer = LatentLossRegularizer(self.beta)
         self.hidden_dims = self.calculate_hidden_dims(hidden_dims=self.hidden_dims, n_layers=self.n_layers,
                                                       input_shape=input_shape)
         self.hidden_dims[-1] *= 2
-        self.get_encoder_decoder(input_shape, latent_activation='linear', latent_init='zeros')
+        self.get_encoder_decoder(input_shape, latent_init='zeros')
 
     def call(self, x, training=None, mask=None):
         encoded = self.encoder(x)
@@ -127,8 +133,9 @@ class VAE(AE):
 
 
 class CAE(tf.keras.Model):
-    def __init__(self, filters_base=8, pooling=2, k_size=3, n_conv=2, strides=1,
-                 activation='selu', dropout=None, latent_dim=0.2, regularizer=None, output_activation='sigmoid'):
+    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=1, activation='selu',
+                 dropout=None,
+                 latent_dim=0.35, regularizer=None, output_activation='sigmoid'):
 
         super(CAE, self).__init__()
         self.filters_base = filters_base
@@ -154,7 +161,7 @@ class CAE(tf.keras.Model):
             self.latent_dim = np.round(self.latent_dim * np.prod(input_shape)).astype(int)
         self.get_encoder_decoder(input_shape)
 
-    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid'):
+    def get_encoder_decoder(self, input_shape, latent_activation='sigmoid', latent_init='glorot_uniform'):
         layers_encoder = [layers.Input(input_shape)]
         layers_decoder = []
         if self.dropout and self.dropout > 0:
@@ -178,7 +185,8 @@ class CAE(tf.keras.Model):
         decoder_output = encoder_output = self.encoder.compute_output_shape((None,) + input_shape)
         self.encoder.add(layers.Flatten())
         self.encoder.add(
-            layers.Dense(self.latent_dim, activation=latent_activation, activity_regularizer=self.regularizer))
+            layers.Dense(self.latent_dim, activation=latent_activation, activity_regularizer=self.regularizer,
+                         kernel_initializer=latent_init))
         for layer in layers_decoder:
             decoder_output = layer.compute_output_shape(decoder_output)
         layers_decoder[0:0] = [layers.Dense(np.prod(encoder_output[1:]), activation=self.activation),
@@ -198,26 +206,20 @@ class CAE(tf.keras.Model):
 
 
 class CVAE(CAE):
-    def __init__(self, filters_base=8, pooling=2, k_size=3, n_conv=2, strides=1,
-                 activation='selu', latent_dim=0.2, output_activation='sigmoid'):
-        super().__init__(filters_base=filters_base,
-                         pooling=pooling,
-                         k_size=k_size,
-                         n_conv=n_conv,
-                         strides=strides,
-                         activation=activation,
-                         latent_dim=latent_dim,
-                         output_activation=output_activation)
+    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 latent_dim=0.35, output_activation='sigmoid'):
+        super().__init__(filters_base=filters_base, pooling=pooling, k_size=k_size, n_conv=n_conv, strides=strides,
+                         activation=activation, latent_dim=latent_dim, output_activation=output_activation)
         self.regularizer = None
         self.sampling = Sampling()
 
     def build(self, input_shape):
         input_shape = input_shape[1:]
         self.latent_dim *= 2
-        self.regularizer = LatentLossRegularizer(1 / np.prod(input_shape))
+        self.regularizer = LatentLossRegularizer()
         if isinstance(self.latent_dim, float):
-            self.latent_dim = np.round(self.latent_dim * np.prod(input_shape)).astype(int)
-        self.get_encoder_decoder(input_shape, latent_activation='linear')
+            self.latent_dim = round(self.latent_dim * np.prod(input_shape))
+        self.get_encoder_decoder(input_shape, latent_activation='linear', latent_init='zeros')
 
     def call(self, x, **kwargs):
         encoded = self.encoder(x)
@@ -232,28 +234,15 @@ class CVAE(CAE):
 
 
 class CDAE(CAE):
-    def __init__(self, filters_base=8, pooling=2, k_size=3, n_conv=2, strides=1,
-                 activation='selu', latent_dim=0.2, output_activation='sigmoid'):
-        super().__init__(filters_base=filters_base,
-                         pooling=pooling,
-                         k_size=k_size,
-                         n_conv=n_conv,
-                         strides=strides,
-                         activation=activation,
-                         latent_dim=latent_dim,
-                         dropout=0.2,
-                         output_activation=output_activation)
+    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 latent_dim=0.35, output_activation='sigmoid'):
+        super().__init__(filters_base=filters_base, pooling=pooling, k_size=k_size, n_conv=n_conv, strides=strides,
+                         activation=activation, dropout=0.2, latent_dim=latent_dim, output_activation=output_activation)
 
 
 class CSAE(CAE):
-    def __init__(self, filters_base=8, pooling=2, k_size=3, n_conv=2, strides=1,
-                 activation='selu', latent_dim=0.2, output_activation='sigmoid'):
-        super().__init__(filters_base=filters_base,
-                         pooling=pooling,
-                         k_size=k_size,
-                         n_conv=n_conv,
-                         strides=strides,
-                         activation=activation,
-                         latent_dim=latent_dim,
-                         regularizer=KLDRegularizer(weight=0.05),
+    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 latent_dim=0.35, output_activation='sigmoid'):
+        super().__init__(filters_base=filters_base, pooling=pooling, k_size=k_size, n_conv=n_conv, strides=strides,
+                         activation=activation, latent_dim=latent_dim, regularizer=KLDRegularizer(weight=0.05),
                          output_activation=output_activation)

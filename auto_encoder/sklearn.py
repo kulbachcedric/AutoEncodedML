@@ -13,14 +13,16 @@ class Transformer(BaseEstimator, TransformerMixin):
               'cdae': CDAE,
               'csae': CSAE}
 
-    def __init__(self, type='ae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, **ae_kwargs):
+    def __init__(self, type='ae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, patience=2,
+                 **ae_kwargs):
         self.type = type
         self.model = None
         self.loss = loss
         self.optimizer = optimizer
         self.max_epochs = max_epochs
+        self.patience = patience
         self.ae_kwargs = ae_kwargs
-        self.callback = tf.keras.callbacks.EarlyStopping(min_delta=0, patience=2, restore_best_weights=True)
+        self.callback = tf.keras.callbacks.EarlyStopping(min_delta=0, patience=self.patience, restore_best_weights=True)
 
     def fit(self, X, y=None):
         self.n_features_ = X.shape[1] if len(X.shape) == 2 else X.shape[1:]
@@ -46,13 +48,16 @@ class Transformer(BaseEstimator, TransformerMixin):
 
 
 class AutoTransformer(Transformer):
-    def __init__(self, type='ae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, hidden_dims=0.2,
-                 n_layers=3, activation='selu', output_activation='sigmoid', dropout=None, hidden_dropout=None):
-        super(AutoTransformer, self).__init__(type, loss, optimizer, max_epochs)
+    def __init__(self, type='ae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, patience=2,
+                 hidden_dims=0.35, n_layers=3, activation='selu', output_activation='sigmoid',
+                 latent_activation='sigmoid', dropout=None, hidden_dropout=None):
+        super(AutoTransformer, self).__init__(type=type, loss=loss, optimizer=optimizer, max_epochs=max_epochs,
+                                              patience=patience)
         self.hidden_dims = hidden_dims
         self.n_layers = n_layers
         self.activation = activation
         self.output_activation = output_activation
+        self.latent_activation = latent_activation
         self.dropout = dropout
         self.hidden_dropout = hidden_dropout
 
@@ -64,7 +69,8 @@ class AutoTransformer(Transformer):
         else:
             self.model = Transformer.models[self.type](hidden_dims=self.hidden_dims, n_layers=self.n_layers,
                                                        activation=self.activation,
-                                                       output_activation=self.output_activation)
+                                                       output_activation=self.output_activation,
+                                                       latent_activation=self.latent_activation)
         self.model.compile(loss=self.loss, optimizer=self.optimizer)
         self.model.fit(X, X, epochs=self.max_epochs, validation_split=0.1, callbacks=[self.callback])
         tf.keras.backend.clear_session()
@@ -72,10 +78,10 @@ class AutoTransformer(Transformer):
 
 
 class ConvolutionalAutoTransformer(Transformer):
-    def __init__(self, type='cae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, filters_base=8,
-                 pooling=2, k_size=3, n_conv=2, strides=1, activation='selu', latent_dim=0.2,
-                 output_activation='sigmoid'):
-        super().__init__(type=type, loss=loss, optimizer=optimizer, max_epochs=max_epochs)
+    def __init__(self, type='cae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, patience=2,
+                 filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 latent_dim=0.35, output_activation='sigmoid'):
+        super().__init__(type=type, loss=loss, optimizer=optimizer, max_epochs=max_epochs, patience=patience)
         self.filters_base = filters_base
         self.pooling = pooling
         self.k_size = k_size
@@ -91,14 +97,14 @@ class ConvolutionalAutoTransformer(Transformer):
         if isinstance(self.type, tf.keras.Model):
             self.model = self.type
         else:
-            self.model = Transformer.models[self.type](self.filters_base,
-                                                       self.pooling,
-                                                       self.k_size,
-                                                       self.n_conv,
-                                                       self.strides,
-                                                       self.activation,
-                                                       self.latent_dim,
-                                                       self.output_activation)
+            self.model = Transformer.models[self.type](filters_base=self.filters_base,
+                                                       pooling=self.pooling,
+                                                       k_size=self.k_size,
+                                                       n_conv=self.n_conv,
+                                                       strides=self.strides,
+                                                       activation=self.activation,
+                                                       latent_dim=self.latent_dim,
+                                                       output_activation=self.output_activation)
         self.model.compile(loss=self.loss, optimizer=self.optimizer)
         self.model.fit(X, X, epochs=self.max_epochs, validation_split=0.1, callbacks=[self.callback])
         tf.keras.backend.clear_session()
