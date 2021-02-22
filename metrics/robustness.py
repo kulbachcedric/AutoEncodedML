@@ -9,7 +9,7 @@ from sklearn.utils import resample
 
 from auto_encoder.sklearn import AutoTransformer
 from data.openml import get_openml_data
-from data.util import corrupt_gaussian, corrupt_with_mask
+from data.util import corrupt_gaussian, corrupt_snp
 
 
 class AdversarialRobustness:
@@ -45,7 +45,7 @@ class NoiseRobustness:
         if callable(corruption):
             self.corrupt = corruption
         else:
-            self.corrupt = corrupt_with_mask if corruption == 'zero_mask' else corrupt_gaussian
+            self.corrupt = corrupt_snp if corruption == 'zero_mask' else corrupt_gaussian
         if callable(scoring):
             self.scorer = scoring
         else:

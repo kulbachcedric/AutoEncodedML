@@ -30,5 +30,4 @@ def compute_means(df):
     for prefix in prefixes:
         cols = [col for col in df.columns if prefix in col]
         df['mean' + prefix] = df[cols].aggregate('mean', axis=1)
-
     return df

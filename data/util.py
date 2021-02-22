@@ -9,13 +9,13 @@ def get_train_test_indices(data, test_size=0.2):
     return indices_train, indices_test
 
 
-def corrupt_with_mask(data, noise_level=0.5, pepper=True):
+def corrupt_snp(data, noise_level=0.5, pepper=True):
     num_zeros = round(noise_level * np.prod(data.shape[1:]))
     out = np.copy(data)
     mins = np.min(data, axis=0)
     maxs = np.max(data, axis=0)
     for sample in out:
-        indices = np.array([np.random.choice(np.arange(i), num_zeros, replace=False) for i in sample.shape])
+        indices = tuple([np.random.choice(np.arange(int(i)), int(num_zeros), replace=False) for i in sample.shape])
         sample[indices] = np.where(np.random.randint(0, 2) == 1, mins[indices], maxs[indices]) if pepper else mins[
             indices]
     return out
