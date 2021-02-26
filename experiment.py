@@ -2,7 +2,10 @@ from datetime import datetime
 from time import time
 
 import pandas as pd
+from pipelinehelper import PipelineHelper
+from sklearn.decomposition import PCA, KernelPCA
 from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.manifold import Isomap
 from sklearn.svm import SVC, LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.naive_bayes import GaussianNB
@@ -107,17 +110,31 @@ def run_clf_test(dataset_ids, clfs, scaling='minmax', cv=3, score_metric='accura
 
 
 def run_gridsearch(dataset_ids, scorers, cv=3, reshape=False, scaling='minmax'):
-    pipe = Pipeline([
-        ('ae', AutoTransformer(max_epochs=100, patience=2, hidden_dims=0.35)),
-        ('clf', LogisticRegression(penalty='none', max_iter=500))
+    pipe1 = Pipeline([
+        ('trafo', PipelineHelper([
+            ('ae', AutoTransformer()),
+            ('none', IdentityTransformer())
+        ])),
+        ('clf', LogisticRegression(max_iter=500))
     ])
-    params = {
-        'ae__type': ['ae', 'vae', 'dae', 'sae']
+    params1 = {
+        'trafo__selected_model': pipe1.named_steps['trafo'].generate({
+            'ae__type': ['ae', 'vae', 'dae', 'sae']
+        })
     }
+
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
         x, y = get_openml_data(dataset_id, scaling=scaling)
+        n_components = (np.arange(0.05, 1.01, 0.05) * np.prod(x.shape[1:])).astype(int)
+        pipe = Pipeline([
+            ('pca', PCA()),
+            ('clf', LogisticRegression(penalty='none', max_iter=500))
+        ])
+        params = {
+            'pca__n_components': n_components
+        }
         if reshape:
             x = np.reshape(x, (-1, 28, 28, 1))
         splits = [get_train_test_indices(y)] if cv == 1 else cv
@@ -167,9 +184,10 @@ def run_training_robustness_test(dataset_ids, transformers, clfs, scaling='minma
 
 
 def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax', cv=3, score_metric='accuracy',
-                                noise_levels=np.arange(0, 0.51, 0.05), corrupt_type='snp', use_reconstructions=False):
+                                noise_levels=np.arange(0, 0.51, 0.05), corrupt_types=('snp', 'gaussian'),
+                                use_reconstructions=False):
     results = {}
-    corrupt = corrupt_snp if corrupt_type == 'snp' else corrupt_gaussian
+
     for dataset_id in dataset_ids:
         x, y = get_openml_data(dataset_id, scaling=None, corrupt_type=None)
         skf = StratifiedKFold(cv)
@@ -185,47 +203,76 @@ def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax
                 x_train_encoded = transformer.fit_transform(x_train)
                 if use_reconstructions:
                     x_train_encoded = transformer.inverse_transform(x_train_encoded)
-                print(f'{str(transformer)}: fitting completed. Time: {round((time() - start) / 60, 2)} min.')
+                fit_time_transformer = time() - start
+                print(f'{str(transformer)}: fitting completed. Time: {round(fit_time_transformer / 60, 2)} min.')
                 for clf in clfs:
                     start = time()
                     clf.fit(x_train_encoded, y_train)
-                    print(f'{str(clf)}: fitting completed. Time: {round((time() - start) / 60, 2)} min.')
+                    fit_time_clf = time() - start
+                    print(f'{str(clf)}: fitting completed. Time: {round(fit_time_clf / 60, 2)} min.')
                     for noise_level in noise_levels:
-                        start = time()
-                        x_test_corrupted = corrupt(x_test, noise_level=noise_level)
-                        x_test_corrupted = np.clip(scaler.transform(x_test_corrupted), a_min=0, a_max=1)
-                        x_test_encoded = transformer.transform(x_test_corrupted)
-                        if use_reconstructions:
-                            x_test_encoded = transformer.inverse_transform(x_test_encoded)
-                        score = scorer(clf, x_test_encoded, y_test)
-                        key = (dataset_id, str(transformer), str(clf), noise_level)
-                        if key in results:
-                            results[key][f'split{fold}_test_{score_metric}'] = score
-                        else:
-                            results[key] = {f'split{fold}_test_{score_metric}': score}
+                        for corrupt_type in corrupt_types:
+                            corrupt = corrupt_snp if corrupt_type == 'snp' else corrupt_gaussian
+                            start = time()
+                            x_test_corrupted = corrupt(x_test, noise_level=noise_level)
+                            x_test_corrupted = np.clip(scaler.transform(x_test_corrupted), a_min=0, a_max=1)
+                            x_test_encoded = transformer.transform(x_test_corrupted)
+                            if use_reconstructions:
+                                x_test_encoded = transformer.inverse_transform(x_test_encoded)
+                            score = scorer(clf, x_test_encoded, y_test)
+                            key = (dataset_id, str(transformer), str(clf), noise_level, corrupt_type)
+                            if key in results:
+                                results[key][f'split{fold}_test_{score_metric}'] = score
+                                results[key][f'split{fold}_fit_time_transformer'] = fit_time_transformer
+                                results[key][f'split{fold}_fit_time_clf'] = fit_time_clf
+                            else:
+                                results[key] = {f'split{fold}_test_{score_metric}': score,
+                                                f'split{fold}_fit_time_transformer': fit_time_transformer,
+                                                f'split{fold}_fit_time_clf': fit_time_clf}
                         print(f'Level {noise_level} testing completed. Time: {round((time() - start) / 60, 2)} min.')
     df = pd.DataFrame.from_dict(results, orient='index')
-    df.index.names = ['dataset_id', 'transformer', 'clf', 'noise_level']
+    df.index.names = ['dataset_id', 'transformer', 'clf', 'noise_level', 'corrupt_type']
+    df = df.reset_index()
+    return compute_means(df)
+
+
+def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minmax', cv=3):
+    results = {}
+    for dataset_id in dataset_ids:
+        x, y = get_openml_data(dataset_id, scaling=scaling, corrupt_type=None)
+        skf = StratifiedKFold(cv)
+        for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
+            x_train, x_test = x[train_idx], x[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+            for transformer in transformers:
+                print(f'id:{dataset_id}, fold: {fold}, transformer: {str(transformer)}')
+                for clf in clfs:
+                    key = (dataset_id, str(transformer), str(clf))
+                    pipe = Pipeline([
+                        ('trafo', transformer),
+                        ('clf', clf)
+                    ])
+                    start = time()
+                    pipe.fit(x_train, y_train)
+                    results[key][f'split{fold}_fit_time'] = time() - start
+                    for score_name, scorer in scorers.items():
+                        score = scorer(pipe, x_test, y_test)
+                        if key in results:
+                            results[key][f'split{fold}_test_{score_name}'] = score
+                        else:
+                            results[key] = {f'split{fold}_test_{score_name}': score}
+
+    df = pd.DataFrame.from_dict(results, orient='index')
+    df.index.names = ['dataset_id', 'transformer', 'clf']
     df = df.reset_index()
     return compute_means(df)
 
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    transformers = IdentityTransformer()
-    result = []
-    clf = TPOTClassifier(verbosity=3,
-                         scoring="accuracy",
-                         random_state=50,
-                         n_jobs=1,
-                         generations=20,
-                         periodic_checkpoint_folder="intermediate_algos",
-                         population_size=60,
-                         early_stop=10,
-                         cv=3)
-    for noise_type in ['gaussian', 'snp']:
-        df_i = run_testing_robustness_test(datasets, transformers=[IdentityTransformer()], clfs=[clf])
-        df_i['noise_type'] = noise_type
-        result.append(df_i)
-    df = pd.concat(result, axis=0)
-    df.to_csv('tpot_robustness_test.csv')
+    scorers = {'accuracy': get_scorer('accuracy')}
+    clfs = [TPOTClassifier(generations=5, population_size=20, verbosity=2, cv=3, scoring="accuracy", n_jobs=50)]
+    df = run_testing_robustness_test(datasets,
+                                     transformers=[AutoTransformer(type='dae')],
+                                     clfs=clfs)
+    df.to_csv('tpot_w_ae.csv')
