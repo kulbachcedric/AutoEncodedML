@@ -96,9 +96,9 @@ class DAE(AE):
 
 class SAE(AE):
     def __init__(self, hidden_dims=0.35, n_layers=3, activation='selu', output_activation='sigmoid',
-                 latent_activation='sigmoid'):
+                 latent_activation='sigmoid', target=0.1, weight=0.05):
         super(SAE, self).__init__(hidden_dims, n_layers=n_layers, activation=activation, tied_weights=False,
-                                  regularizer=KLDRegularizer(0.05), output_activation=output_activation,
+                                  regularizer=KLDRegularizer(weight, target=target), output_activation=output_activation,
                                   latent_activation=latent_activation)
 
 
