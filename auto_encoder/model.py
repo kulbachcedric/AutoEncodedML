@@ -133,7 +133,7 @@ class VAE(AE):
 
 
 class CAE(tf.keras.Model):
-    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=1, activation='selu',
+    def __init__(self, filters_base=12, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
                  dropout=None,
                  latent_dim=0.35, regularizer=None, output_activation='sigmoid'):
 
@@ -173,14 +173,18 @@ class CAE(tf.keras.Model):
                               activation=self.activation, padding='same',
                               strides=self.strides))
 
+            if self.pooling and self.pooling > 0:
+                layers_encoder.append(layers.MaxPool2D(pool_size=self.pooling))
+
+        for i in range(self.n_conv-1):
+            k_size_i = (self.k_size[i], self.k_size[i])
             layers_decoder.append(
                 layers.Conv2DTranspose(self.filters_base * 2 ** (self.n_conv - i - 1),
                                        kernel_size=k_size_i, activation=self.activation,
                                        padding='same', strides=self.strides))
-
             if self.pooling and self.pooling > 0:
-                layers_encoder.append(layers.MaxPool2D(pool_size=self.pooling))
                 layers_decoder.append(layers.UpSampling2D(size=self.pooling))
+
         self.encoder = tf.keras.Sequential(layers_encoder, name='Encoder')
         decoder_output = encoder_output = self.encoder.compute_output_shape((None,) + input_shape)
         self.encoder.add(layers.Flatten())
@@ -206,19 +210,22 @@ class CAE(tf.keras.Model):
 
 
 class CVAE(CAE):
-    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
-                 latent_dim=0.35, output_activation='sigmoid'):
+    def __init__(self, filters_base=12, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 latent_dim=0.35, output_activation='sigmoid', beta=None):
         super().__init__(filters_base=filters_base, pooling=pooling, k_size=k_size, n_conv=n_conv, strides=strides,
                          activation=activation, latent_dim=latent_dim, output_activation=output_activation)
         self.regularizer = None
         self.sampling = Sampling()
+        self.beta = beta
 
     def build(self, input_shape):
         input_shape = input_shape[1:]
-        self.latent_dim *= 2
-        self.regularizer = LatentLossRegularizer()
+        if not self.beta:
+            self.beta = 1 / np.prod(input_shape)
+        self.regularizer = LatentLossRegularizer(self.beta)
         if isinstance(self.latent_dim, float):
             self.latent_dim = round(self.latent_dim * np.prod(input_shape))
+        self.latent_dim *= 2
         self.get_encoder_decoder(input_shape, latent_activation='linear', latent_init='zeros')
 
     def call(self, x, **kwargs):
@@ -234,7 +241,7 @@ class CVAE(CAE):
 
 
 class CDAE(CAE):
-    def __init__(self, filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+    def __init__(self, filters_base=12, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
                  latent_dim=0.35, output_activation='sigmoid'):
         super().__init__(filters_base=filters_base, pooling=pooling, k_size=k_size, n_conv=n_conv, strides=strides,
                          activation=activation, dropout=0.2, latent_dim=latent_dim, output_activation=output_activation)

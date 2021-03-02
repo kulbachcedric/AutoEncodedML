@@ -33,12 +33,19 @@ from metrics.robustness import AdversarialRobustness, NoiseRobustness
 
 np.random.seed(42)
 
+physical_devices = tf.config.list_physical_devices('GPU')
+try:
+  tf.config.experimental.set_memory_growth(physical_devices[0], True)
+except:
+  # Invalid device or cannot modify virtual devices once initialized.
+  pass
+
 
 def run_ssl(dataset_ids, transformers, clf, cv=3, labeled_splits=np.arange(0.05, 1.01, 0.05), score_metric='accuracy',
             scaling='minmax'):
     dfs = []
     for dataset_id in dataset_ids:
-        for transformer in transformers:
+        for t_name, transformer in transformers.items():
             x, y = get_openml_data(dataset_id, scaling=scaling)
             skf = StratifiedKFold(cv)
             scorer = get_scorer(score_metric)
@@ -63,7 +70,7 @@ def run_ssl(dataset_ids, transformers, clf, cv=3, labeled_splits=np.arange(0.05,
 
             df_scenario = pd.DataFrame(results).T
             df_scenario['dataset_id'] = dataset_id
-            df_scenario['transformer'] = str(transformer)
+            df_scenario['transformer'] = t_name
             dfs.append(df_scenario)
     df = pd.concat(dfs, axis=0)
     return compute_means(df)
@@ -109,7 +116,7 @@ def run_clf_test(dataset_ids, clfs, scaling='minmax', cv=3, score_metric='accura
     return compute_means(df)
 
 
-def run_gridsearch(dataset_ids, scorers, cv=3, reshape=False, scaling='minmax'):
+def run_gridsearch(dataset_ids, scorers, cv=3, scaling='minmax', reshape=None):
     pipe1 = Pipeline([
         ('trafo', PipelineHelper([
             ('ae', AutoTransformer()),
@@ -126,7 +133,7 @@ def run_gridsearch(dataset_ids, scorers, cv=3, reshape=False, scaling='minmax'):
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
-        x, y = get_openml_data(dataset_id, scaling=scaling)
+        x, y = get_openml_data(dataset_id, scaling=scaling, reshape=reshape)
         n_components = (np.arange(0.05, 1.01, 0.05) * np.prod(x.shape[1:])).astype(int)
         pipe = Pipeline([
             ('pca', PCA()),
@@ -135,8 +142,6 @@ def run_gridsearch(dataset_ids, scorers, cv=3, reshape=False, scaling='minmax'):
         params = {
             'pca__n_components': n_components
         }
-        if reshape:
-            x = np.reshape(x, (-1, 28, 28, 1))
         splits = [get_train_test_indices(y)] if cv == 1 else cv
         grid = GridSearchCV(estimator=pipe, param_grid=params, cv=splits,
                             scoring=scorers, refit=False, verbose=2)
@@ -160,18 +165,18 @@ def run_training_robustness_test(dataset_ids, transformers, clfs, scaling='minma
             skf = StratifiedKFold(cv)
             scorer = get_scorer(score_metric)
             for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
-                for transformer in transformers:
-                    print(f'id:{dataset_id}, level:{noise_level}, fold: {fold}, transformer: {str(transformer)}')
+                for t_name, transformer in transformers.items():
+                    print(f'id:{dataset_id}, level:{noise_level}, fold: {fold}, transformer: {t_name}')
                     start = time()
                     y_train, y_test = y[train_idx], y[test_idx]
                     x_train_encoded = transformer.fit_transform(x[train_idx])
                     x_test_encoded = transformer.transform(x[test_idx])
-                    print(f'{str(transformer)}: fitting completed. Time: {round((time() - start) / 60, 2)} min.')
+                    print(f'{t_name}: fitting completed. Time: {round((time() - start) / 60, 2)} min.')
                     for clf in clfs:
                         start = time()
                         clf.fit(x_train_encoded, y_train)
                         score = scorer(clf, x_test_encoded, y_test)
-                        key = (dataset_id, str(transformer), str(clf), noise_level)
+                        key = (dataset_id, t_name, str(clf), noise_level)
                         if key in results:
                             results[key][f'split{fold}_test_{score_metric}'] = score
                         else:
@@ -185,7 +190,7 @@ def run_training_robustness_test(dataset_ids, transformers, clfs, scaling='minma
 
 def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax', cv=3, score_metric='accuracy',
                                 noise_levels=np.arange(0, 0.51, 0.05), corrupt_types=('snp', 'gaussian'),
-                                use_reconstructions=False):
+                                use_reconstructions=False, reshape=None):
     results = {}
 
     for dataset_id in dataset_ids:
@@ -193,18 +198,20 @@ def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax
         skf = StratifiedKFold(cv)
         scorer = get_scorer(score_metric)
         for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
-            for transformer in transformers:
-                print(f'id:{dataset_id}, fold: {fold}, transformer: {str(transformer)}')
+            for t_name, transformer in transformers.items():
+                print(f'id:{dataset_id}, fold: {fold}, transformer: {t_name}')
                 start = time()
                 y_train, y_test = y[train_idx], y[test_idx]
                 x_train, x_test = x[train_idx], x[test_idx]
                 scaler = MinMaxScaler() if scaling == 'minmax' else StandardScaler
                 x_train = scaler.fit_transform(x_train)
+                if reshape:
+                    x_train= x_train.reshape(reshape)
                 x_train_encoded = transformer.fit_transform(x_train)
                 if use_reconstructions:
                     x_train_encoded = transformer.inverse_transform(x_train_encoded)
                 fit_time_transformer = time() - start
-                print(f'{str(transformer)}: fitting completed. Time: {round(fit_time_transformer / 60, 2)} min.')
+                print(f'{t_name}: fitting completed. Time: {round(fit_time_transformer / 60, 2)} min.')
                 for clf in clfs:
                     start = time()
                     clf.fit(x_train_encoded, y_train)
@@ -216,11 +223,13 @@ def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax
                             start = time()
                             x_test_corrupted = corrupt(x_test, noise_level=noise_level)
                             x_test_corrupted = np.clip(scaler.transform(x_test_corrupted), a_min=0, a_max=1)
+                            if reshape:
+                                x_test_corrupted = x_test_corrupted.reshape(reshape)
                             x_test_encoded = transformer.transform(x_test_corrupted)
                             if use_reconstructions:
                                 x_test_encoded = transformer.inverse_transform(x_test_encoded)
                             score = scorer(clf, x_test_encoded, y_test)
-                            key = (dataset_id, str(transformer), str(clf), noise_level, corrupt_type)
+                            key = (dataset_id, t_name, str(clf), noise_level, corrupt_type)
                             if key in results:
                                 results[key][f'split{fold}_test_{score_metric}'] = score
                                 results[key][f'split{fold}_fit_time_transformer'] = fit_time_transformer
@@ -236,18 +245,18 @@ def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax
     return compute_means(df)
 
 
-def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minmax', cv=3):
+def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minmax', cv=3, reshape=None):
     results = {}
     for dataset_id in dataset_ids:
-        x, y = get_openml_data(dataset_id, scaling=scaling, corrupt_type=None)
+        x, y = get_openml_data(dataset_id, scaling=scaling, corrupt_type=None, reshape=reshape)
         skf = StratifiedKFold(cv)
         for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
             x_train, x_test = x[train_idx], x[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
-            for transformer in transformers:
-                print(f'id:{dataset_id}, fold: {fold}, transformer: {str(transformer)}')
+            for t_name, transformer in transformers.items():
+                print(f'id:{dataset_id}, fold: {fold}, transformer: {t_name}')
                 for clf in clfs:
-                    key = (dataset_id, str(transformer), str(clf))
+                    key = (dataset_id, t_name, str(clf))
                     pipe = Pipeline([
                         ('trafo', transformer),
                         ('clf', clf)
@@ -270,9 +279,9 @@ def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minm
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    scorers = {'accuracy': get_scorer('accuracy')}
-    clfs = [TPOTClassifier(generations=5, population_size=20, verbosity=2, cv=3, scoring="accuracy", n_jobs=50)]
-    df = run_testing_robustness_test(datasets,
-                                     transformers=[AutoTransformer(type='dae')],
-                                     clfs=clfs)
-    df.to_csv('tpot_w_ae.csv')
+
+    transformers = {t: ConvolutionalAutoTransformer(type=t) for t in ['cvae', 'cdae', 'cae', 'csae']}
+    clfs = [LogisticRegression(max_iter=500, penalty='none'), LogisticRegression(max_iter=500, penalty='none'),
+            DecisionTreeClassifier(), GaussianNB(), LinearSVC(max_iter=100)]
+    df = run_testing_robustness_test([40996], transformers=transformers, clfs=clfs, reshape=(-1, 28, 28, 1))
+    df.to_csv('cae_robustness')

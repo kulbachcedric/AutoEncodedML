@@ -79,7 +79,7 @@ class AutoTransformer(Transformer):
 
 class ConvolutionalAutoTransformer(Transformer):
     def __init__(self, type='cae', loss='binary_crossentropy', optimizer='adam', max_epochs=100, patience=2,
-                 filters_base=8, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
+                 filters_base=12, pooling=None, k_size=(7, 5, 3), n_conv=3, strides=2, activation='selu',
                  latent_dim=0.35, output_activation='sigmoid'):
         super().__init__(type=type, loss=loss, optimizer=optimizer, max_epochs=max_epochs, patience=patience)
         self.filters_base = filters_base
@@ -119,6 +119,9 @@ class IdentityTransformer(BaseEstimator, TransformerMixin):
         return X
 
     def transform(self, X, y=None):
+        return X
+
+    def inverse_transform(self, X, y=None):
         return X
 
 

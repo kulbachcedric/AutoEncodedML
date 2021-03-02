@@ -6,7 +6,7 @@ import pandas as pd
 from .util import corrupt_gaussian, corrupt_snp
 
 
-def get_openml_data(data_id, subsample_size=None, scaling='minmax', corrupt_type=None, noise_level=0.1):
+def get_openml_data(data_id, subsample_size=None, scaling='minmax', corrupt_type=None, noise_level=0.1, reshape=None):
     data = datasets.fetch_openml(data_id=data_id, as_frame=True)
     if scaling == 'standard':
         scaler = StandardScaler()
@@ -17,6 +17,7 @@ def get_openml_data(data_id, subsample_size=None, scaling='minmax', corrupt_type
     selector = (data['data'].dtypes == 'category')
     cat_columns = data['data'].loc[:, selector].columns
     x = pd.get_dummies(data['data'], columns=cat_columns, drop_first=True).to_numpy()
+
     y = data['target'].to_numpy()
 
     subsample_size = min(subsample_size, len(y)) if subsample_size else None
@@ -32,5 +33,8 @@ def get_openml_data(data_id, subsample_size=None, scaling='minmax', corrupt_type
     if scaling:
         x = scaler.fit_transform(x)
     y = label_enc.fit_transform(y)
+
+    if reshape:
+        x = x.reshape(reshape)
 
     return x, y
