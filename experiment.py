@@ -35,10 +35,10 @@ np.random.seed(42)
 
 physical_devices = tf.config.list_physical_devices('GPU')
 try:
-  tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
 except:
-  # Invalid device or cannot modify virtual devices once initialized.
-  pass
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
 
 
 def run_ssl(dataset_ids, transformers, clf, cv=3, labeled_splits=np.arange(0.05, 1.01, 0.05), score_metric='accuracy',
@@ -78,70 +78,61 @@ def run_ssl(dataset_ids, transformers, clf, cv=3, labeled_splits=np.arange(0.05,
 
 def run_clf_test(dataset_ids, clfs, scaling='minmax', cv=3, score_metric='accuracy',
                  params=np.arange(0.25, 2.01, 0.25)):
-    dfs = []
+    results = {}
     for dataset_id in dataset_ids:
         for param in params:
-            x, y = get_openml_data(dataset_id, subsample_size=10000, scaling=scaling)
+            x, y = get_openml_data(dataset_id, scaling=scaling)
             skf = StratifiedKFold(cv)
             scorer = get_scorer(score_metric)
-            results = {}
             transformer = AutoTransformer(hidden_dims=param)
             for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
                 x_train, x_test = x[train_idx], x[test_idx]
                 y_train, y_test = y[train_idx], y[test_idx]
                 start = time()
                 x_train_encoded = transformer.fit_transform(x_train)
-                ae_fit_time = time() - start
+                fit_time_transformer = time() - start
                 x_test_encoded = transformer.transform(x_test)
                 for clf in clfs:
-                    results_scenario = {f'split{fold}_ae_fit_time': ae_fit_time}
+                    print(f'id:{dataset_id}, param:{param}, fold:{fold}, clf:{str(clf)}')
                     start = time()
                     clf.fit(x_train_encoded, y_train)
-                    results_scenario[f'split{fold}_clf_fit_time'] = time() - start
+                    fit_time_clf = time() - start
                     start = time()
-                    results_scenario[f'split{fold}_test_{score_metric}'] = scorer(clf, x_test_encoded, y_test)
-                    results_scenario[f'split{fold}_score_time'] = time() - start
+                    score = scorer(clf, x_test_encoded, y_test)
+                    score_time = time() - start
 
-                    if fold == 0:
-                        results[str(clf)] = results_scenario
+                    key = (dataset_id, str(clf), param)
+                    if key in results:
+                        results[key][f'split{fold}_test_{score_metric}'] = score
+                        results[key][f'split{fold}_fit_time_transformer'] = fit_time_transformer
+                        results[key][f'split{fold}_fit_time_clf'] = fit_time_clf
+                        results[key][f'split{fold}_score_time'] = score_time
                     else:
-                        for key, value in results_scenario.items():
-                            results[str(clf)][key] = value
-
-            df_scenario = pd.DataFrame(results).T
-            df_scenario['dataset_id'] = dataset_id
-            df_scenario['param'] = param
-            dfs.append(df_scenario)
-    df = pd.concat(dfs, axis=0)
+                        results[key] = {f'split{fold}_test_{score_metric}': score,
+                                        f'split{fold}_fit_time_transformer': fit_time_transformer,
+                                        f'split{fold}_fit_time_clf': fit_time_clf,
+                                        f'split{fold}_score_time': score_time}
+    df = pd.DataFrame.from_dict(results, orient='index')
+    df.index.names = ['dataset_id', 'clf', 'param']
+    df = df.reset_index()
     return compute_means(df)
 
 
 def run_gridsearch(dataset_ids, scorers, cv=3, scaling='minmax', reshape=None):
-    pipe1 = Pipeline([
-        ('trafo', PipelineHelper([
-            ('ae', AutoTransformer()),
-            ('none', IdentityTransformer())
-        ])),
-        ('clf', LogisticRegression(max_iter=500))
+    pipe = Pipeline([
+        ('ae', AutoTransformer()),
+        ('clf', LogisticRegression(max_iter=500, penalty='none'))
     ])
-    params1 = {
-        'trafo__selected_model': pipe1.named_steps['trafo'].generate({
-            'ae__type': ['ae', 'vae', 'dae', 'sae']
-        })
+    params = {
+        'ae__type': ['ae', 'vae', 'dae', 'sae'],
+        'ae__n_layers': [1, 2, 3, 4, 5],
+        'ae__activation': ['selu', 'relu', 'tanh', 'sigmoid']
     }
 
     results = {}
     for dataset_id in dataset_ids:
         print(f'---------Dataset: {dataset_id}---------')
         x, y = get_openml_data(dataset_id, scaling=scaling, reshape=reshape)
-        n_components = (np.arange(0.05, 1.01, 0.05) * np.prod(x.shape[1:])).astype(int)
-        pipe = Pipeline([
-            ('pca', PCA()),
-            ('clf', LogisticRegression(penalty='none', max_iter=500))
-        ])
-        params = {
-            'pca__n_components': n_components
-        }
         splits = [get_train_test_indices(y)] if cv == 1 else cv
         grid = GridSearchCV(estimator=pipe, param_grid=params, cv=splits,
                             scoring=scorers, refit=False, verbose=2)
@@ -206,7 +197,7 @@ def run_testing_robustness_test(dataset_ids, transformers, clfs, scaling='minmax
                 scaler = MinMaxScaler() if scaling == 'minmax' else StandardScaler
                 x_train = scaler.fit_transform(x_train)
                 if reshape:
-                    x_train= x_train.reshape(reshape)
+                    x_train = x_train.reshape(reshape)
                 x_train_encoded = transformer.fit_transform(x_train)
                 if use_reconstructions:
                     x_train_encoded = transformer.inverse_transform(x_train_encoded)
@@ -279,9 +270,5 @@ def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minm
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-
-    transformers = {t: ConvolutionalAutoTransformer(type=t) for t in ['cvae', 'cdae', 'cae', 'csae']}
-    clfs = [LogisticRegression(max_iter=500, penalty='none'), LogisticRegression(max_iter=500, penalty='none'),
-            DecisionTreeClassifier(), GaussianNB(), LinearSVC(max_iter=100)]
-    df = run_testing_robustness_test([40996], transformers=transformers, clfs=clfs, reshape=(-1, 28, 28, 1))
-    df.to_csv('cae_robustness')
+    scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
+    run_gridsearch(datasets, scorers=scorers)
