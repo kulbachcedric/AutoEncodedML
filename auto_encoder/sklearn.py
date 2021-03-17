@@ -9,6 +9,7 @@ class Transformer(BaseEstimator, TransformerMixin):
               'dae': DAE,
               'sae': SAE,
               'cae': CAE,
+              'rae': RAE,
               'cvae': CVAE,
               'cdae': CDAE,
               'csae': CSAE}
@@ -113,6 +114,7 @@ class ConvolutionalAutoTransformer(Transformer):
 
 class IdentityTransformer(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
+        self.n_features_ = np.prod(X.shape[1:])
         return self
 
     def fit_transform(self, X, y=None, **fit_params):
@@ -151,3 +153,32 @@ class SoftmaxClassifier(BaseEstimator, ClassifierMixin):
 
     def predict_proba(self, X):
         return self.model(X)
+
+
+class AutoencodingClassifier(Transformer):
+    def fit(self, X, y):
+        n_classes = np.unique(y).size
+        self.n_features_ = X.shape[1] if len(X.shape) == 2 else X.shape[1:]
+        if isinstance(self.type, tf.keras.Model):
+            self.model = self.type
+        else:
+            self.model = Transformer.models[self.type](**self.ae_kwargs)
+        self.model.compile(loss=self.loss, optimizer=self.optimizer)
+        self.model.fit(X, X, epochs=self.max_epochs, validation_split=0.1, callbacks=[self.callback])
+
+        x_encoded = self.model.encoder(X)
+        callback2 = tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+        softmax = keras.Sequential([keras.layers.Dense(n_classes, activation='softmax', name='softmax')])
+        softmax.compile(loss='sparse_categorical_crossentropy', optimizer=self.optimizer)
+        softmax.fit(x_encoded, y, epochs=1000, validation_split=0.1, callbacks=[callback2])
+        self.clf = keras.Sequential([self.model.encoder, softmax])
+        self.clf.compile(loss='sparse_categorical_crossentropy', optimizer=self.optimizer)
+        self.clf.fit(X, y, epochs=20)
+        return self
+
+    def predict(self, X):
+        probs = self.predict_proba(X)
+        return tf.argmax(probs, axis=-1)
+
+    def predict_proba(self, X):
+        return self.clf(X)

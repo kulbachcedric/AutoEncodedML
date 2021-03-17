@@ -24,7 +24,8 @@ from xgboost.sklearn import XGBClassifier
 
 from auto_encoder.model import *
 from auto_encoder.sklearn import AutoTransformer, ConvolutionalAutoTransformer, SoftmaxClassifier, IdentityTransformer, \
-    Transformer
+    Transformer, AutoencodingClassifier
+from auto_encoder.component import CovRegularizer
 from data.openml import get_openml_data
 from data.util import get_train_test_indices, corrupt_snp, corrupt_gaussian
 from experiments.util import cv_results_to_df, remove_col_prefix, compute_means
@@ -32,6 +33,7 @@ from metrics.reconstruction import ReconstructionError
 from metrics.robustness import AdversarialRobustness, NoiseRobustness
 
 np.random.seed(42)
+
 
 physical_devices = tf.config.list_physical_devices('GPU')
 try:
@@ -45,10 +47,10 @@ def run_ssl(dataset_ids, transformers, clf, cv=3, labeled_splits=np.arange(0.05,
             scaling='minmax'):
     dfs = []
     for dataset_id in dataset_ids:
+        x, y = get_openml_data(dataset_id, scaling=scaling)
+        skf = StratifiedKFold(cv)
+        scorer = get_scorer(score_metric)
         for t_name, transformer in transformers.items():
-            x, y = get_openml_data(dataset_id, scaling=scaling)
-            skf = StratifiedKFold(cv)
-            scorer = get_scorer(score_metric)
             results = {}
             for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
                 x_train, x_test = x[train_idx], x[test_idx]
@@ -80,11 +82,11 @@ def run_clf_test(dataset_ids, clfs, scaling='minmax', cv=3, score_metric='accura
                  params=np.arange(0.25, 2.01, 0.25)):
     results = {}
     for dataset_id in dataset_ids:
+        x, y = get_openml_data(dataset_id, scaling=scaling)
+        skf = StratifiedKFold(cv)
+        scorer = get_scorer(score_metric)
         for param in params:
-            x, y = get_openml_data(dataset_id, scaling=scaling)
-            skf = StratifiedKFold(cv)
-            scorer = get_scorer(score_metric)
-            transformer = AutoTransformer(hidden_dims=param)
+            transformer = Transformer(hidden_dims=0.65, regularizer=CovRegularizer(1))
             for fold, (train_idx, test_idx) in enumerate(skf.split(x, y)):
                 x_train, x_test = x[train_idx], x[test_idx]
                 y_train, y_test = y[train_idx], y[test_idx]
@@ -254,13 +256,15 @@ def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minm
                     ])
                     start = time()
                     pipe.fit(x_train, y_train)
-                    results[key][f'split{fold}_fit_time'] = time() - start
+                    fit_time = time() - start
                     for score_name, scorer in scorers.items():
                         score = scorer(pipe, x_test, y_test)
                         if key in results:
                             results[key][f'split{fold}_test_{score_name}'] = score
+                            results[key][f'split{fold}_fit_time'] = fit_time
                         else:
-                            results[key] = {f'split{fold}_test_{score_name}': score}
+                            results[key] = {f'split{fold}_test_{score_name}': score,
+                                            f'split{fold}_fit_time': fit_time}
 
     df = pd.DataFrame.from_dict(results, orient='index')
     df.index.names = ['dataset_id', 'transformer', 'clf']
@@ -270,5 +274,11 @@ def run_transformer_test(dataset_ids, transformers, scorers, clfs, scaling='minm
 
 if __name__ == '__main__':
     datasets = [40996, 40668, 1492, 44]
-    scorers = {'accuracy': get_scorer('accuracy'), 'reconstruction_error': ReconstructionError()}
-    run_gridsearch(datasets, scorers=scorers)
+    transformers = {'gdae': Transformer(type='ae', noise_corruption=0.1, activation='selu', n_layers=3, hidden_dims=0.65)}
+
+    clfs = [LogisticRegression(max_iter=500, penalty='none')]
+    scorers = {'accuracy': get_scorer('accuracy')}
+
+    df = run_clf_test([40996], clfs, params=[0.2])
+    df.to_csv('results/csv/noise_dae1.csv')
+

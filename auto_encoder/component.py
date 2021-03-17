@@ -51,13 +51,21 @@ class KLDRegularizer(tf.keras.regularizers.Regularizer):
                               + losses.kld(1. - self.target, 1. - mean_activities))
 
 
+def tf_cov(x):
+    mean_x = tf.reduce_mean(x, axis=0, keepdims=True)
+    mx = tf.matmul(tf.transpose(mean_x), mean_x)
+    vx = tf.matmul(tf.transpose(x), x) / tf.cast(tf.shape(x)[0], tf.float32)
+    cov_xx = vx - mx
+    return cov_xx
+
+
 class CovRegularizer(layers.Layer):
     def __init__(self, weight=1.0):
         super(CovRegularizer, self).__init__(trainable=False)
         self.weight = weight
 
     def call(self, inputs, **kwargs):
-        covariance = [1, 2]  # tfp.stats.covariance(inputs)
+        covariance = tf_cov(inputs)
 
         if covariance.shape[0] <= 1:
             penalty = 0.0
